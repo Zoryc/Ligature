@@ -79,7 +79,7 @@ This is two containers (plus optional Caddy). There is no Redis, no Mongo and no
 
 ### What happens on a keystroke
 1. You type. `y-codemirror.next` applies the change to the local `Y.Text`, using a local origin so the UndoManager tracks it.
-2. Yjs emits a binary update of a few bytes. The provider sends it over the shared socket for doc `file:<uuid>:<epoch>`.
+2. Yjs emits a binary update of a few bytes. The provider sends it over the shared socket for doc `proj/<projectId>/file/<fileId>/g<epoch>`.
 3. Hocuspocus checks the connection. If it is `readOnly`, the update is dropped. Otherwise the server applies it to its `Y.Doc` and broadcasts it to every other connection on that doc.
 4. The persistence extension buffers the update and commits a batch to `doc_updates` every ~200 ms. `onStoreDocument` (debounce 2 s, max 10 s) compacts the log into `doc_state` (Yjs state plus a plain-text mirror) and deletes the merged log rows.
 5. Other clients apply the update, and CodeMirror redraws. Remote cursors travel separately through awareness as relative positions.
@@ -94,7 +94,7 @@ This is two containers (plus optional Caddy). There is no Redis, no Mongo and no
    - deletes removed files;
    - mirrors source subdirectories into `out/`, so `\include{chapters/x}` works with `-outdir`;
    - runs latexmk under limits.
-6. The helper streams the PDF, log and `.synctex.gz` back, each size-capped. The app stores the last 3 builds, records which snapshot they came from, and broadcasts `compile-finished` on the project channel. The UI shows "PDF is N edits behind" when applicable.
+6. The helper streams the PDF, log and `.synctex.gz` back, each size-capped. The app stores the last 3 builds, records which snapshot they came from, and broadcasts `compile-finished` on the project channel. The UI shows "PDF is N edits behind" when applicable. The PDF and SyncTeX output are tagged with `{treeVersion, stateVectors}` so the client knows exactly which text each build came from.
 
 ---
 
@@ -107,9 +107,9 @@ This is two containers (plus optional Caddy). There is no Redis, no Mongo and no
   - the size is at most 1 MB.
 
   Everything else is a blob.
-- The doc name is `file:<uuid>:<epoch>`. It **never contains the path**, so renaming or moving a file touches no sync state. Because the epoch is part of the name, any client cache (including a later `y-indexeddb` cache) can never merge stale state into a rebuilt doc.
+- The doc name is `proj/<projectId>/file/<fileId>/g<epoch>`. It **never contains the path**, so renaming or moving a file touches no sync state. Because the epoch is part of the name, any client cache (including a later `y-indexeddb` cache) can never merge stale state into a rebuilt doc.
 - Docs load lazily and unload when their last client leaves. Memory therefore scales with open files, not project size.
-- Each open project also connects to `project:<uuid>`. It is an empty doc that carries:
+- Each open project also connects to `proj/<projectId>/meta`. It is an empty doc that carries:
   - awareness: who is online and which file each person has open (avatars in the tree);
   - stateless messages: `tree-changed`, `compile-finished`, `file-deleted`, `access-revoked`.
 
@@ -369,9 +369,10 @@ e2e/                Playwright: two browsers co-editing, permissions, compile
 | Users | **Trusted team / lab** | The default `uid` sandbox is sufficient. Registration stays `invite-only` by default. gVisor remains an optional hardening documented in M4, not a requirement. |
 | Frontend | **Svelte 5 + Vite** (TypeScript) | Less boilerplate than React for a solo developer. CodeMirror, Yjs and PDF.js are framework-agnostic, so they are wrapped in thin Svelte components. |
 | Backend language | **TypeScript on Node 24** | As in section 2. |
+| TeX features | **Defaults** | pdfLaTeX, XeLaTeX and LuaLaTeX available; fonts only from TeX Live (font caches pre-generated in the image); shell-escape off. `minted` works only if an admin enables restricted shell-escape; `listings` is the recommended alternative. |
+| Where PDFs compile | **On the server** | One TeX Live in the compiler container; browsers only download and display the PDF with PDF.js. No WASM TeX in the browser (a non-goal for v1). |
 
-### Still open
-- **Does the team need `minted` (needs shell-escape) or LuaLaTeX/XeLaTeX with system fonts (`fontspec`)?** Default assumption: pdfLaTeX, XeLaTeX and LuaLaTeX are all available; fonts come only from TeX Live; shell-escape is off, with `minted` available only if an admin enables restricted mode.
+Sync design research and the alternatives considered: [SYNC.md](SYNC.md).
 
 *Unverified, to confirm in M0:*
 - the exact Hocuspocus 4 mounting and request-header API;
