@@ -1,0 +1,66 @@
+# @ligature/web
+
+The browser app: Svelte 5 + Vite + TypeScript. The UI is plain on purpose (simple CSS, no design system).
+
+## Run (development)
+
+From the repo root, in two terminals:
+
+```sh
+npm run dev:server   # API + collaboration server on http://127.0.0.1:3000
+npm run dev:web      # Vite on http://localhost:5173 (proxies /api and /collab to :3000)
+```
+
+Open http://localhost:5173 and use one of the dev logins: alice (owner), bob (editor), carol (viewer).
+To try co-editing, use two browsers, or one normal window and one private window.
+
+Compiling needs the compiler worker on `http://127.0.0.1:7071` (see the repo docs). Without it, Recompile shows
+"Compiler unavailable" in the log panel.
+
+Use `localhost`, not `127.0.0.1`. The server checks the `Origin` header against `http://localhost:5173`.
+The Vite proxy forwards the browser's Origin as it is (`changeOrigin` is deliberately off).
+
+## Scripts (run in `apps/web`)
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run build` | Production build to `dist/` (static files) |
+| `npm run typecheck` | `svelte-check` (uses this package's own TypeScript 5.9, because svelte-check does not support TS 7 yet) |
+| `npm test` | Vitest unit tests for the pure helpers (log parsing, tree, "PDF is behind", colours) |
+
+## Layout
+
+```
+src/
+  main.ts, App.svelte        hash routing: #/login, #/projects, #/project/:id
+  pages/                     Login, Projects, Project (tree | editor | PDF + log)
+  lib/api.ts                 REST client (cookie session; 401 -> login page)
+  lib/collab.ts              one shared Hocuspocus socket per page, one provider per open file, meta doc for presence + events
+  lib/presence.ts            sanitizes remote presence (awareness) states: colours derived from the user id, names capped
+  lib/behind.ts              "PDF is behind" (state vector + delete set comparison against the build)
+  lib/buildEvents.ts         tells our own compile-finished broadcasts from collaborators' ones
+  lib/Editor.svelte          CodeMirror 6 + y-codemirror.next (Y.UndoManager undo, stex highlighting, read-only for viewers)
+  lib/PdfView.svelte         pdf.js 6, lazy-loaded; only pages near the viewport have a canvas; keeps the scroll position
+  lib/LogPanel.svelte        build status + log; `file:line:` errors are clickable
+  lib/FileTree.svelte        tree built from the flat project tree
+```
+
+## Deploying the build
+
+`npm run build` writes static files to `dist/`. Whatever serves them (the app server or Caddy) must:
+
+- serve `.mjs` as `text/javascript`: pdf.js loads `assets/pdf.worker.min-*.mjs` as a module worker, and browsers
+  refuse module scripts with another MIME type;
+- serve the page from the origin the server's Origin check expects, with `/api` and `/collab` on the same origin.
+
+Source maps are not emitted; run `npx vite build --sourcemap` for a debug build.
+
+## Server-side follow-ups (not in this package)
+
+- Presence is relayed by the collaboration server unchecked. The client sanitizes colours and names, but a member can
+  still claim another user's id or name; only the server can drop awareness states whose `user.id` is not the
+  connection's user.
+- "PDF is behind" sees deletion-only edits reliably only if the build result carries `snapshot.docSnapshots`
+  (`fileId -> base64 Y.encodeSnapshot(Y.snapshot(liveDoc))`); without it the client falls back to a local baseline
+  (see `src/lib/behind.ts`).

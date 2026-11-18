@@ -1,0 +1,29 @@
+# Caddy in front of Ligature (PLAN section 3). Caddy gets and renews the TLS certificate itself.
+#   sudo cp docker/Caddyfile.example /etc/caddy/Caddyfile   # then replace the host name
+#   sudo systemctl reload caddy
+# The app listens on 127.0.0.1:3000 only (docker/compose.yaml). reverse_proxy passes WebSocket
+# upgrades (/collab) through unchanged. LIGATURE_ORIGIN must be exactly https://<this host>.
+#
+# Not covered yet: serving the web client's static build (apps/web/dist) is still open (see the PLAN);
+# once the app serves it, nothing changes here.
+
+latex.example.org {
+	encode zstd gzip
+
+	# Large uploads (images, zip import) and long compiles.
+	request_body {
+		max_size 200MB
+	}
+	reverse_proxy 127.0.0.1:3000 {
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+}

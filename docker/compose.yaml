@@ -1,0 +1,78 @@
+# Ligature: app + compiler (PLAN section 3 and 6). Run from the repository root:
+#   LIGATURE_ORIGIN=https://latex.example.org docker compose -f docker/compose.yaml up -d --build
+# Put Caddy (or another TLS proxy with WebSocket support) in front of 127.0.0.1:3000.
+# There is deliberately no docker.sock, Redis or database container anywhere.
+name: ligature
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.app
+    image: ligature-app:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /data
+      COMPILER_URL: unix:/run/ligature/compiler.sock
+      ALLOWED_ORIGINS: ${LIGATURE_ORIGIN:?set LIGATURE_ORIGIN to the public URL, e.g. https://latex.example.org}
+    ports:
+      - "127.0.0.1:3000:3000"        # only the local reverse proxy talks to the app
+    volumes:
+      - data:/data                   # app.db, blobs, build outputs: never mounted in the compiler
+      - run:/run/ligature            # the compiler's unix socket
+    depends_on:
+      compiler:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    pids_limit: 256
+
+  compiler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.compiler
+      args:
+        # medium scheme for a small VPS: see the comment at the top of Dockerfile.compiler
+        TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:TL2026-full}
+    image: ligature-compiler:tl2026
+    restart: unless-stopped
+    # No `init: true` needed: the image's entrypoint is tini, which reaps orphaned TeX processes.
+    environment:
+      NODE_ENV: production
+      SANDBOX: uid                   # one uid per project (PLAN 6). For gVisor add `runtime: runsc` here.
+      COMPILER_LISTEN: unix:/run/ligature/compiler.sock
+      BUILDS_DIR: /builds
+      COMPILER_SOCKET_GID: "1000"    # gid of the app container's "node" user: socket dir root:1000 0710, socket 0660
+      # COMPILE_MAX_TIMEOUT_MS: "300000"
+      # Disk (defaults shown; see apps/compiler/README.md). The builds volume shares the host disk with the
+      # app's data volume unless you put it elsewhere, so keep these bounded:
+      # PROJECT_DISK_QUOTA_MB: "1024"     # what one build may write on top of its sources
+      # BLOB_CACHE_MAX_MB: "2048"         # source-content cache; evicted least recently used first
+      # BLOB_CACHE_MAX_AGE_HOURS: "72"
+      # BUILD_DIR_MAX_IDLE_DAYS: "7"      # build dirs of projects not compiled for this long are deleted
+      # BUILDS_MIN_FREE_MB: "1024"        # compiles answer `error` while the volume has less free space
+    network_mode: none               # no network at all; reached only through the unix socket
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]   # drop to project uid, chown new build dirs, kill timed-out groups
+    security_opt: [no-new-privileges:true]
+    mem_limit: 4g
+    pids_limit: 512
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - builds:/builds               # per-project build dirs (0700, project uid), blob cache, latest outputs
+      - run:/run/ligature            # socket directory; root-owned so compile processes cannot reach the worker
+      # The app's data volume is NEVER mounted here.
+
+volumes:
+  data:
+  # For a hard cap, put this volume on its own size-limited filesystem (a separate disk/partition, an XFS
+  # project quota, or a loop-mounted image), so a runaway build can never fill the disk holding `data`.
+  builds:
+  run:

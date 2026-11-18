@@ -17,10 +17,10 @@ export function tempDataDir(): string {
 export interface RunningServer { proc: ChildProcess; port: number; base: string; output: () => string }
 
 /** Start the real server as a child process (node + tsx loader, so SIGKILL hits the server itself). */
-export async function startServer(dataDir: string, port: number): Promise<RunningServer> {
+export async function startServer(dataDir: string, port: number, extraEnv: Record<string, string> = {}): Promise<RunningServer> {
   const proc = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     cwd: SERVER_DIR,
-    env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATA_DIR: dataDir, COMPILER_URL: 'http://127.0.0.1:1' },
+    env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATA_DIR: dataDir, COMPILER_URL: 'http://127.0.0.1:1', ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let out = ''

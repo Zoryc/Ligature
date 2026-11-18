@@ -1,0 +1,85 @@
+# syntax=docker/dockerfile:1
+#
+# Ligature compiler: TeX Live 2026 (Island of TeX image) + the small Node worker (apps/compiler).
+# Build from the repository root:   docker build -f docker/Dockerfile.compiler -t ligature-compiler .
+#
+# The worker has NO npm runtime dependencies: only its TypeScript sources are copied, and Node runs
+# them directly (type stripping, Node >= 24).
+
+# --- TeX Live base image -------------------------------------------------------------------------
+# PINNED, BUT THE EXACT TAG MUST BE VERIFIED (PLAN section 11, "Unverified, to confirm in M0"):
+# check the tag list of texlive/texlive on Docker Hub (mirror of registry.gitlab.com/islandoftex/images/texlive)
+# and replace this with the real TL2026 full-scheme tag WITHOUT docs/sources, ideally pinned by digest:
+#   ARG TEXLIVE_IMAGE=texlive/texlive:<TL2026 tag>@sha256:<digest>
+# For a small VPS build the "compiler:tl2026-medium" variant of the PLAN from this same file with a
+# medium-scheme tag (roughly 1-2 GB instead of 4-5 GB; tag also to be verified), e.g.
+#   docker build -f docker/Dockerfile.compiler --build-arg TEXLIVE_IMAGE=texlive/texlive:<TL2026 medium tag> \
+#     -t ligature-compiler:tl2026-medium .
+# or set LIGATURE_TEXLIVE_IMAGE when using docker/compose.yaml.
+ARG TEXLIVE_IMAGE=texlive/texlive:TL2026-full
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+FROM ${NODE_IMAGE} AS node
+
+FROM ${TEXLIVE_IMAGE}
+
+# Node 24: just the binary from the official image (the TeX Live image is Debian-based, newer glibc).
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+
+# prlimit (util-linux) applies the per-compile resource limits; usually already present.
+# tini runs as PID 1 and reaps orphans: when a timed-out latexmk's process group is killed, its sh/pdflatex
+# children are re-parented to PID 1. Node only waits for the pids it spawned itself, so with node as PID 1
+# those zombies would pile up until they exhaust pids_limit / the project uid's process limit.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends tini; \
+    if ! command -v prlimit >/dev/null 2>&1; then apt-get install -y --no-install-recommends util-linux; fi; \
+    rm -rf /var/lib/apt/lists/*; \
+    node --version; latexmk -v | head -n 2; prlimit --version; tini --version
+
+# TeX hardening, appended to the installation's top-level texmf.cnf (which overrides texmf-dist/web2c/texmf.cnf).
+# The worker also sets the same values as environment variables for every run (belt and braces).
+COPY docker/texmf.cnf /tmp/ligature-texmf.cnf
+RUN set -eux; \
+    TL_ROOT="$(kpsewhich -var-value=SELFAUTOPARENT)"; \
+    cat /tmp/ligature-texmf.cnf >> "$TL_ROOT/texmf.cnf"; \
+    rm /tmp/ligature-texmf.cnf; \
+    test "$(kpsewhich -var-value=shell_escape)" = "f"; \
+    test "$(kpsewhich -var-value=openin_any)" = "p"; \
+    test "$(kpsewhich -var-value=openout_any)" = "p"
+
+# Pre-generate formats and the LuaTeX font cache at build time: the root filesystem is read-only at runtime,
+# and without these the first LuaLaTeX/fontspec compile is very slow or fails. Caches go to TEXMFSYSVAR,
+# which every project uid can read; per-project additions go to the project's own TEXMFVAR.
+RUN set -eux; \
+    fmtutil-sys --all > /tmp/fmtutil.log 2>&1 || (tail -n 50 /tmp/fmtutil.log; exit 1); \
+    TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force; \
+    mktexlsr; \
+    rm -f /tmp/fmtutil.log; \
+    chmod -R a+rX "$(kpsewhich -var-value=TEXMFSYSVAR)"
+
+# The worker. Root-owned and world-readable: the per-compile helper runs as the project's uid and must be
+# able to read (never write) these files.
+WORKDIR /app
+COPY apps/compiler/package.json apps/compiler/package.json
+COPY apps/compiler/src apps/compiler/src
+RUN chown -R root:root /app && chmod -R a+rX,go-w /app \
+    && mkdir -p /builds /run/ligature && chmod 0711 /builds && chmod 0700 /run/ligature
+
+ENV NODE_ENV=production \
+    SANDBOX=uid \
+    COMPILER_LISTEN=unix:/run/ligature/compiler.sock \
+    BUILDS_DIR=/builds
+
+# Runs as root on purpose: it needs SETUID/SETGID to drop to each project's uid and CHOWN to hand over
+# build directories. Compose drops every other capability (see docker/compose.yaml).
+USER root
+
+# Probes whatever COMPILER_LISTEN names (the same variable the worker listens on).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "/app/apps/compiler/src/healthcheck.ts"]
+
+# tini is PID 1 (see above); it forwards SIGTERM to the worker. With `docker run --init` / compose `init: true`
+# this still works (tini then only warns that it is not PID 1), but neither is needed.
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/app/apps/compiler/src/worker.ts"]
+CMD []

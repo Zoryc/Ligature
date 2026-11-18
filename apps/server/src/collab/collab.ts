@@ -49,6 +49,20 @@ export function createCollab(db: DB, store: DocStore) {
       return { user, role, projectId: ref.projectId } satisfies CollabContext
     },
 
+    /**
+     * Presence is client-controlled data, so the server stamps the identity: every awareness state a
+     * connection sends gets `user.id` / `user.name` from that connection's session. Nobody can appear
+     * as someone else. Colours are recomputed client-side from the id. Oversized states are rejected.
+     */
+    async beforeHandleAwareness({ states, connection }) {
+      const ctx = connection?.context
+      if (!ctx) return // server-internal (DirectConnection)
+      for (const state of states.values()) {
+        if (JSON.stringify(state).length > 4096) throw new Error('awareness state too large')
+        state['user'] = { id: ctx.user.id, name: ctx.user.displayName }
+      }
+    },
+
     async onLoadDocument({ document, documentName }) {
       if (parseDocName(documentName)?.kind !== 'file') return
       store.load(documentName, document)

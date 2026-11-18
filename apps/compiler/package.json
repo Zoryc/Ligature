@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types src/worker.ts",
+    "start": "node src/worker.ts",
+    "dev": "node --watch src/worker.ts",
     "typecheck": "tsc -p .",
     "test": "vitest run"
   },
@@ -12,5 +13,8 @@
     "@types/node": "^24",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

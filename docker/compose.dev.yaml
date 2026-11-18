@@ -1,0 +1,40 @@
+# DEVELOPMENT ONLY: the compiler alone, reachable on 127.0.0.1:7071 over TCP, for an app that runs
+# natively on the host (e.g. Windows, which cannot reach a unix socket inside the Docker VM; PLAN section 8).
+#   docker compose -f docker/compose.dev.yaml up --build
+# then run the app with its dev default COMPILER_URL=http://127.0.0.1:7071.
+#
+# Differences from docker/compose.yaml: the compiler gets a network (only to publish the port on the
+# host's loopback; nothing else is reachable through it by design) and listens on TCP, which it only
+# accepts with ALLOW_TCP=1. The worker has no authentication: never publish this port beyond 127.0.0.1,
+# and never use this file in production (the app refuses an http: compiler URL in production).
+name: ligature-dev
+
+services:
+  compiler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.compiler
+      args:
+        TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:TL2026-full}
+    image: ligature-compiler:tl2026
+    environment:
+      NODE_ENV: production
+      SANDBOX: uid
+      COMPILER_LISTEN: tcp:0.0.0.0:7071
+      ALLOW_TCP: "1"
+      BUILDS_DIR: /builds
+    ports:
+      - "127.0.0.1:7071:7071"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, CHOWN, KILL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 4g
+    pids_limit: 512
+    tmpfs:
+      - /tmp:size=64m
+    volumes:
+      - builds:/builds
+
+volumes:
+  builds:

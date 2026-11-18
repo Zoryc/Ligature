@@ -16,7 +16,12 @@ export interface BuildResult {
   log: string
   hasPdf: boolean
   /** tree version + per-doc state vectors the build was made from (lets the client say "PDF is behind") */
-  snapshot: { treeVersion: number; docs: Record<string, string /* base64 state vector */> }
+  snapshot: {
+    treeVersion: number
+    docs: Record<string, string /* base64 state vector */>
+    /** base64 Y.encodeSnapshot (state vector + delete set): lets the client also detect deletion-only edits */
+    docSnapshots: Record<string, string>
+  }
 }
 
 interface Snapshot {
@@ -28,6 +33,7 @@ interface Snapshot {
   mainFile: string
   engine: Engine
   stateVectors: Record<string, string>
+  docSnapshots: Record<string, string>
 }
 
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex')
@@ -99,6 +105,7 @@ export class CompileOrchestrator {
     const textBlobs = new Map<string, Buffer>()
     const binaryHashes = new Set<string>()
     const stateVectors: Record<string, string> = {}
+    const docSnapshots: Record<string, string> = {}
     for (const f of files) {
       const path = paths.get(f.id)
       if (!path) continue
@@ -110,6 +117,7 @@ export class CompileOrchestrator {
         if (live) {
           text = live.getText(TEXT_KEY).toString()
           stateVectors[f.id] = Buffer.from(Y.encodeStateVector(live)).toString('base64')
+          docSnapshots[f.id] = Buffer.from(Y.encodeSnapshot(Y.snapshot(live))).toString('base64')
         } else {
           text = this.store.storedText(name)?.text ?? ''
         }
@@ -124,7 +132,7 @@ export class CompileOrchestrator {
     }
     const mainFile = (proj.mainFileId && paths.get(proj.mainFileId)) || 'main.tex'
     const engine = (ENGINES as readonly string[]).includes(proj.engine) ? proj.engine as Engine : 'pdflatex'
-    return { treeVersion, manifest, textBlobs, binaryHashes, mainFile, engine, stateVectors }
+    return { treeVersion, manifest, textBlobs, binaryHashes, mainFile, engine, stateVectors, docSnapshots }
   }
 
   private async run(projectId: string): Promise<BuildResult> {
@@ -152,7 +160,7 @@ export class CompileOrchestrator {
       writeFileSync(join(dir, 'output.log'), res.log)
       const result: BuildResult = {
         buildId, status: res.status, durationMs: res.durationMs, log: res.log, hasPdf,
-        snapshot: { treeVersion: snap.treeVersion, docs: snap.stateVectors },
+        snapshot: { treeVersion: snap.treeVersion, docs: snap.stateVectors, docSnapshots: snap.docSnapshots },
       }
       writeFileSync(join(dir, 'build.json'), JSON.stringify({ ...result, log: undefined }))
       this.collab.broadcast(projectId, { type: 'compile-finished', buildId, status: res.status })

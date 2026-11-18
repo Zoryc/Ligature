@@ -1,0 +1,14 @@
+% Ligature compiler hardening. Appended to $SELFAUTOPARENT/texmf.cnf (the TeX Live installation's
+% local override file) by docker/Dockerfile.compiler. The worker sets the same values as environment
+% variables for every run as well. These are a FIRST layer only: LuaTeX's Lua `io` library is not
+% reliably restricted by openin_any, so the OS sandbox (one uid per project, no network) is the real boundary.
+
+% No \write18 at all. Restricted mode (p, for minted) is an explicit per-instance admin opt-in only.
+shell_escape = f
+
+% Paranoid: no dot files, no parent directories, no absolute paths (outside TEXMFOUTPUT).
+openin_any = p
+openout_any = p
+
+% No per-user tree: packages come from TeX Live only (the worker also points TEXMFHOME at /nonexistent).
+TEXMFHOME = /nonexistent
