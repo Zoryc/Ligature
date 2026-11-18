@@ -2,7 +2,7 @@
  * Static checks of the deployment and CI configuration (docker/compose*.yaml, .github/workflows/ci.yml):
  * settings the sandbox depends on that no test on a developer machine would notice when they are lost.
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -71,5 +71,26 @@ describe('CI workflow', () => {
     expect(sandbox).toContain("CORPUS_NO_WORLD_WRITABLE: '1'")
     expect(sandbox).toMatch(/TEXMFVAR="\$\(kpsewhich -var-value=TEXMFSYSVAR\)" luaotfload-tool --update --force/)
     expect(sandbox).toContain('bash scripts/ci/compiler-sandbox-tests.sh')
+  })
+})
+
+describe('docker/Dockerfile.app', () => {
+  it('copies the package.json of every workspace package before npm ci (else npm skips linking it)', () => {
+    const dockerfile = read('docker/Dockerfile.app')
+    const npmCi = dockerfile.indexOf('RUN npm ci')
+    expect(npmCi).toBeGreaterThan(0)
+    const beforeCi = dockerfile.slice(0, npmCi)
+    for (const group of ['apps', 'packages']) {
+      for (const name of readdirSync(join(REPO, group))) {
+        if (!existsSync(join(REPO, group, name, 'package.json'))) continue
+        expect(beforeCi, `${group}/${name}/package.json is not copied before npm ci`)
+          .toContain(`COPY ${group}/${name}/package.json ${group}/${name}/package.json`)
+      }
+    }
+  })
+
+  it('ships every workspace package the server imports at runtime', () => {
+    const dockerfile = read('docker/Dockerfile.app')
+    expect(dockerfile).toMatch(/^COPY --from=build \/src\/packages packages$/m)
   })
 })

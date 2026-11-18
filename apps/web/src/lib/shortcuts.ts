@@ -27,10 +27,10 @@ export function dismissMenu(target: EventTarget, inside: (t: EventTarget | null)
   const onKey = (e: Event) => {
     if ((e as KeyboardEvent).key === 'Escape') close()
   }
-  target.addEventListener('pointerdown', onPointer, true)
+  target.addEventListener('pointerdown', onPointer, { capture: true })
   target.addEventListener('keydown', onKey)
   return () => {
-    target.removeEventListener('pointerdown', onPointer, true)
+    target.removeEventListener('pointerdown', onPointer, { capture: true })
     target.removeEventListener('keydown', onKey)
   }
 }

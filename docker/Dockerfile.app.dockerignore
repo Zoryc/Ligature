@@ -14,3 +14,6 @@
 **/.env
 **/.env.*
 !**/.env.example
+# Tests and their fixtures are not needed in the image.
+apps/*/test
+packages/*/test

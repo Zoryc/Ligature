@@ -16,6 +16,10 @@ COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/compiler/package.json apps/compiler/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/latex-log-parser/package.json packages/latex-log-parser/package.json
+COPY packages/synctex/package.json packages/synctex/package.json
+# Every workspace package needs its package.json here, or npm ci silently skips linking it into
+# node_modules/@ligature/ (apps/compiler/test/deployConfig.test.ts checks this list against packages/*).
 # better-sqlite3 (prebuilds/<platform>.node) and @node-rs/argon2 / esbuild (per-platform optional packages)
 # ship prebuilt binaries, so no compiler toolchain is needed. --ignore-scripts matters: without it npm runs
 # its implicit `node-gyp rebuild` for better-sqlite3 (it has a binding.gyp), which needs python/make/g++.
@@ -23,7 +27,7 @@ RUN npm ci --no-audit --no-fund --ignore-scripts \
  && node -e "new (require('better-sqlite3'))(':memory:').prepare('select 1').get()" \
  && node -e "require('@node-rs/argon2')"
 COPY tsconfig.base.json ./
-COPY packages/shared packages/shared
+COPY packages packages
 COPY apps/server apps/server
 COPY apps/web apps/web
 RUN npm run build -w @ligature/web && test -f apps/web/dist/index.html
@@ -36,7 +40,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /src/package.json /src/tsconfig.base.json ./
 COPY --from=build /src/node_modules node_modules
-COPY --from=build /src/packages/shared packages/shared
+COPY --from=build /src/packages packages
 COPY --from=build /src/apps/server apps/server
 # The SPA, served by the app itself for every non-/api, non-/collab GET (WEB_DIST_DIR below).
 COPY --from=build /src/apps/web/dist apps/web/dist
