@@ -309,7 +309,7 @@ instance_settings(key PK, value)                             -- registration mod
 
 ---
 
-## 8. Repository layout (pnpm workspace)
+## 8. Repository layout (npm workspaces)
 
 ```
 apps/server/        Hono API, Hocuspocus + persistence extension, orchestrator, history, CLI
@@ -374,8 +374,22 @@ e2e/                Playwright: two browsers co-editing, permissions, compile
 
 Sync design research and the alternatives considered: [SYNC.md](SYNC.md).
 
-*Unverified, to confirm in M0:*
-- the exact Hocuspocus 4 mounting and request-header API;
-- whether the provider token can be a callback;
-- Island of TeX tag names and image sizes;
-- latexmk's own `-outdir` subdirectory handling in TL2026.
+## 12. M0 results (2026-11-18)
+
+**Done-criteria met** on Windows 11 with TinyTeX (TeX Live 2026): two browsers co-edit with live cursors; `kill -9` of the server loses nothing (automated, three scenarios); a real PDF comes back from the compiler worker. 300+ automated tests across `packages/shared`, `apps/server`, `apps/compiler` and `apps/web`.
+
+**Verified facts**
+- Hocuspocus 4.8: the provider always sends an Auth message (empty token is fine) and `onAuthenticate` always runs with `requestHeaders`, so **cookie auth works** with no ticket endpoint. The provider token may also be a function. Mounting on our own `ws` server via `hocuspocus.handleConnection(ws, Request)` gives one HTTP server for API + WebSocket.
+- Read-only connections are enforced by the server (updates rejected), and `beforeHandleAwareness` lets the server stamp presence identity; both are covered by e2e tests.
+- latexmk (TL2026) creates `out/<subdir>/` itself for `\include{chapters/x}` with `-outdir`.
+- Native Windows development needs **no Docker**: compiler worker with `SANDBOX=none` + TinyTeX. Multi-user testing in one browser works via `*.localhost` subdomains (dev-only origin rule).
+
+**Deviations from the plan**
+- npm workspaces instead of pnpm (nothing extra to install).
+- Persistence listens to `Y.Doc` `update` events directly (synchronous, same tick) instead of `onChange`.
+- Compiler: `latexmk -norc`, absolute `-outdir`, per-project `src/` + `out/` layout, outputs served from a worker-owned store; disk quota and blob/build-dir eviction already in M0.
+
+**Still unverified (needs Linux / Docker)**
+- The `uid` sandbox (setuid helper, chown, prlimit, reaping) has never run; it needs Linux as root.
+- Docker images are unbuilt; the Island of TeX `TL2026` tag and image sizes are unconfirmed; font caches with `TEXMFVAR` inside the project need checking.
+- Known window: up to ~200 ms of acknowledged edits live only in the write buffer; if the server is killed *and* every client holding them is gone, they are lost (clients re-send them on reconnect otherwise). `y-indexeddb` (M5+) closes it.

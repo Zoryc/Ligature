@@ -2,7 +2,43 @@
 
 A self-hostable, real-time collaborative LaTeX editor with user accounts.
 
-> Status: planning. See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
+> Status: **M0 (technical spike) done** — live co-editing, durable sync, and real compiles work locally.
+> Not ready for real use yet (no real accounts/passwords, no file management). See [docs/PLAN.md](docs/PLAN.md)
+> for the architecture and roadmap, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
+
+## Try it locally (Windows, macOS, Linux)
+
+Requirements: Node 24+, and a TeX distribution with `latexmk` on `PATH`
+(for example [TinyTeX](https://yihui.org/tinytex/) or TeX Live). Docker is only needed for production.
+
+```sh
+npm install
+npm start -w @ligature/compiler   # compiler worker on 127.0.0.1:7071 (dev mode, no sandbox)
+npm run dev:server                # API + collaboration server on 127.0.0.1:3000
+npm run dev:web                   # web UI on http://localhost:5173
+```
+
+Open http://localhost:5173 and log in as `alice` (owner), `bob` (editor) or `carol` (viewer).
+To be two users at once in one browser, use a second tab at http://bob.localhost:5173 —
+each `*.localhost` host has its own login cookie.
+
+## Tests
+
+```sh
+npm test            # all packages
+```
+
+The compiler's real-TeX tests run automatically when `latexmk` is on `PATH`.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `apps/server` | Hono API + Hocuspocus (Yjs) collaboration server, SQLite persistence, compile orchestration |
+| `apps/web` | Svelte 5 SPA: CodeMirror 6 editor, PDF.js viewer |
+| `apps/compiler` | Sandboxed latexmk worker (unix socket in production) |
+| `packages/shared` | Contracts and validation shared by all of the above |
+| `docker/` | Production images and compose file |
 
 ## License
 

@@ -60,3 +60,6 @@ coverage/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local Claude Code / editor launch configs
+.claude/

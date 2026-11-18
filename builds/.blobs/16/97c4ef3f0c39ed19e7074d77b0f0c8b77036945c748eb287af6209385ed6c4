@@ -1,0 +1,2 @@
+\section{Introduction}
+This file lives in a subfolder, to check that \verb|\input{chapters/intro}| works with \texttt{-outdir}.

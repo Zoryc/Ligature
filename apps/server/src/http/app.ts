@@ -14,7 +14,7 @@ type Env = { Variables: { user: SessionUser } }
 export interface AppDeps {
   db: DB
   compile: CompileOrchestrator
-  allowedOrigins: Set<string>
+  isAllowedOrigin: (origin: string | null | undefined) => boolean
   devLogin: boolean
   secureCookies: boolean
 }
@@ -29,7 +29,7 @@ export function createApp(deps: AppDeps) {
   app.use('/api/*', async (c, next) => {
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
       const origin = c.req.header('origin')
-      if (!origin || !deps.allowedOrigins.has(origin)) return c.json({ error: 'bad-origin' }, 403)
+      if (!deps.isAllowedOrigin(origin)) return c.json({ error: 'bad-origin' }, 403)
     }
     await next()
   })

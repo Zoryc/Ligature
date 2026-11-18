@@ -10,6 +10,7 @@ import { CompilerClient } from './compile/compilerClient.ts'
 import { CompileOrchestrator } from './compile/orchestrator.ts'
 import { createApp } from './http/app.ts'
 import { seedDev } from './dev/seed.ts'
+import { originChecker } from './http/origins.ts'
 
 const env = process.env
 const PROD = env.NODE_ENV === 'production'
@@ -22,6 +23,7 @@ const ALLOWED_ORIGINS = new Set((env.ALLOWED_ORIGINS ?? (PROD ? '' : 'http://loc
 const DEV_LOGIN = !PROD && env.DEV_LOGIN !== '0'
 
 if (PROD && ALLOWED_ORIGINS.size === 0) throw new Error('ALLOWED_ORIGINS must be set in production')
+const isAllowedOrigin = originChecker(ALLOWED_ORIGINS, !PROD)
 if (PROD && COMPILER_URL.startsWith('http:') && env.ALLOW_TCP_COMPILER !== '1') {
   throw new Error('In production the compiler must be reached over a unix socket (COMPILER_URL=unix:...)')
 }
@@ -37,7 +39,7 @@ const compiler = new CompilerClient(COMPILER_URL)
 const orchestrator = new CompileOrchestrator(db, store, collab, compiler,
   join(DATA_DIR, 'outputs'), join(DATA_DIR, 'blobs'), Math.max(1, Math.floor(availableParallelism() / 2)))
 
-const app = createApp({ db, compile: orchestrator, allowedOrigins: ALLOWED_ORIGINS, devLogin: DEV_LOGIN, secureCookies: PROD })
+const app = createApp({ db, compile: orchestrator, isAllowedOrigin, devLogin: DEV_LOGIN, secureCookies: PROD })
 const server = createAdaptorServer({ fetch: app.fetch })
 
 // WebSocket: one endpoint, many docs multiplexed by the Hocuspocus provider.
@@ -55,7 +57,7 @@ function toRequest(req: IncomingMessage): Request {
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://x')
   const origin = req.headers.origin
-  if (url.pathname !== '/collab' || !origin || !ALLOWED_ORIGINS.has(origin)) {
+  if (url.pathname !== '/collab' || !isAllowedOrigin(origin)) {
     socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
     socket.destroy()
     return
