@@ -20,6 +20,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
     "@hocuspocus/provider": "~4.8.0",
+    "@ligature/latex-log-parser": "*",
     "@ligature/shared": "*",
     "codemirror": "^6.0.2",
     "pdfjs-dist": "^6.5.438",

@@ -1,0 +1,42 @@
+\documentclass{article}
+\newcommand{\sentence}{This sentence is repeated by a macro to make the paragraph long enough to cross a page break. }
+\begin{document}
+\section{Long Paragraphs}
+This first paragraph is written as one very long source line, the way some people write LaTeX when their editor wraps lines softly: it goes on and on, with clauses separated by commas, semicolons; and dashes---like this one---until it has filled several lines of output, and then it keeps going a little longer just to be sure that the single source line maps to many lines of output, which is the case where forward search must return several rectangles for one line of the source.
+
+The second paragraph uses the opposite style.
+Every
+word
+or
+two
+sits
+on
+its
+own
+line,
+so many source lines share one line of output.
+
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+
+\section{Crossing Pages}
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+\sentence\sentence\sentence\sentence\sentence\sentence\sentence\sentence
+This sentence ends the long paragraph that crossed the page break.
+
+A paragraph written in the ordinary way, with one sentence per line.
+It follows a paragraph that crossed a page.
+Inverse search near the top of this page must still find the right line.
+
+Another long single-line paragraph closes the document: forward search on this line returns several rectangles, one for each line of output, all on the same page, and inverse search anywhere inside those rectangles must come back to this single line of the source file, whichever word is clicked, whether at the start, in the middle, or at the very end of the paragraph.
+\end{document}

@@ -9,7 +9,9 @@ import { openDb, type DB } from './db/index.ts'
 import { DocStore } from './collab/docStore.ts'
 import { createCollab, type Collab } from './collab/collab.ts'
 import { CompilerClient } from './compile/compilerClient.ts'
-import { CompileOrchestrator } from './compile/orchestrator.ts'
+import { CompileOrchestrator, DEFAULT_MAX_COMPILE_QUEUE } from './compile/orchestrator.ts'
+import type { SynctexCacheOptions } from './compile/synctex.ts'
+import { sweepTrash as sweepTrashBatches } from './files/trash.ts'
 import { createApp } from './http/app.ts'
 import { createLimiters, DEFAULT_RATE_LIMITS, type Limiters, type RateLimitConfig } from './http/rateLimit.ts'
 import { BlobStore } from './files/blobStore.ts'
@@ -34,6 +36,18 @@ export interface LigatureConfig {
   wsLimits?: Partial<WsLimits>
   /** Re-check open sockets against their sessions this often (default 60 s). */
   sessionCheckMs?: number
+  /** Builds waiting for a compile slot before `503 compiler-busy` (default 20). */
+  compileQueueLimit?: number
+  /** Builds one user may have waiting for a compile slot before `503 compiler-busy` (default 3). */
+  compileQueuePerUser?: number
+  /** Builds running at once (default: half the CPUs, at least 1). */
+  compileConcurrency?: number
+  /** Clock for the trash retention sweep (tests use a fake one). */
+  clock?: () => number
+  /** How often the trash retention sweep runs (default hourly; it also runs at startup). */
+  trashSweepMs?: number
+  /** Parsed SyncTeX cache bounds (default 8 builds, 3M records). */
+  synctexCache?: SynctexCacheOptions
 }
 
 export interface WsLimits {
@@ -62,6 +76,8 @@ export interface Ligature extends Services {
   limiters: Limiters
   orchestrator: CompileOrchestrator
   compiler: CompilerClient
+  /** Purge trash batches past their retention (runs at startup and every `trashSweepMs`). */
+  sweepTrash(now?: number): Promise<number>
   /** Resolves once listening. */
   listening: Promise<void>
   /** Flush documents and close everything (does not exit the process). */
@@ -88,9 +104,26 @@ export function startLigature(cfg: LigatureConfig): Ligature {
   const collab = createCollab(db, store, cfg.sessionCheckMs !== undefined ? { sessionCheckMs: cfg.sessionCheckMs } : {})
   const blobs = new BlobStore(db, join(cfg.dataDir, 'blobs'))
   const compiler = new CompilerClient(cfg.compilerUrl)
-  const orchestrator = new CompileOrchestrator(db, store, collab, compiler,
-    join(cfg.dataDir, 'outputs'), blobs.dir, Math.max(1, Math.floor(availableParallelism() / 2)))
+  const orchestrator = new CompileOrchestrator(db, store, collab, compiler, join(cfg.dataDir, 'outputs'), blobs.dir, {
+    concurrency: cfg.compileConcurrency ?? Math.max(1, Math.floor(availableParallelism() / 2)),
+    maxQueue: cfg.compileQueueLimit ?? DEFAULT_MAX_COMPILE_QUEUE,
+    ...(cfg.compileQueuePerUser !== undefined ? { maxQueuePerUser: cfg.compileQueuePerUser } : {}),
+    ...(cfg.synctexCache ? { synctexCache: cfg.synctexCache } : {}),
+  })
   const limits: Limits = { ...DEFAULT_LIMITS, ...cfg.limits }
+
+  // Trash retention: sweep at startup and periodically.
+  const clock = cfg.clock ?? Date.now
+  const services: Services = { db, store, collab, blobs, limits }
+  const sweepTrash = (now = clock()) => sweepTrashBatches(services, now)
+  const runSweep = () => {
+    if (!db.open) return
+    sweepTrash().then(n => { if (n) console.log(`[trash] purged ${n} expired batch(es)`) },
+      e => console.error('[trash] sweep failed', e))
+  }
+  runSweep()
+  const sweepTimer = setInterval(runSweep, cfg.trashSweepMs ?? 60 * 60 * 1000)
+  sweepTimer.unref()
   const limiters = createLimiters({ ...DEFAULT_RATE_LIMITS, ...cfg.rateLimits })
 
   const webDistDir = cfg.webDistDir && existsSync(join(cfg.webDistDir, 'index.html')) ? cfg.webDistDir : null
@@ -161,10 +194,12 @@ export function startLigature(cfg: LigatureConfig): Ligature {
 
   let stopped = false
   return {
-    db, store, collab, blobs, limits, limiters, server, app, orchestrator, compiler, listening,
+    db, store, collab, blobs, limits, limiters, server, app, orchestrator, compiler, listening, sweepTrash,
     async stop() {
       if (stopped) return
       stopped = true
+      clearInterval(sweepTimer)
+      await orchestrator.synctex.close()
       for (const c of [...wssAuthed.clients, ...wssAnon.clients]) c.terminate()
       await collab.shutdown()
       wssAuthed.close()

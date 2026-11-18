@@ -64,16 +64,22 @@ export function assertCapacity(s: Services, rows: FileRow[], addNodes: number, a
   }
 }
 
-export interface NewNode { parentId: string; name: string; kind: 'folder' | 'text' | 'binary'; text?: string; blobHash?: string; size?: number }
+export interface NewNode {
+  parentId: string; name: string; kind: 'folder' | 'text' | 'binary'; text?: string; blobHash?: string; size?: number
+  /** Pre-assigned id (default: a new one). */
+  id?: string
+  /** Text docs: the doc state was already written under this id (bulk imports write it beforehand). */
+  docWritten?: boolean
+}
 
 /** Insert a node (inside a transaction, after all checks). */
 export function insertNode(s: Services, projectId: string, n: NewNode): FileRow {
-  const id = randomUUID()
+  const id = n.id ?? randomUUID()
   const now = Date.now()
   const size = n.kind === 'binary' ? n.size ?? 0 : n.kind === 'text' ? Buffer.byteLength(n.text ?? '') : null
   s.db.prepare(`INSERT INTO files (id, project_id, parent_id, name, kind, epoch, blob_hash, size, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`).run(id, projectId, n.parentId, n.name, n.kind, n.blobHash ?? null, size, now, now)
-  if (n.kind === 'text') s.store.seed(fileDocName(projectId, id, 1), n.text ?? '')
+  if (n.kind === 'text' && !n.docWritten) s.store.seed(fileDocName(projectId, id, 1), n.text ?? '')
   return { id, projectId, parentId: n.parentId, name: n.name, kind: n.kind, epoch: 1, blobHash: n.blobHash ?? null, size, deletedAt: null }
 }
 
@@ -147,8 +153,8 @@ export function subtreeIds(rows: Pick<FileRow, 'id' | 'parentId'>[], rootId: str
 }
 
 /**
- * DELETE /projects/:id/files/:fileId — soft delete of the node and, for folders, all live
- * descendants. Deleted text docs are compacted, unloaded and their connections closed
+ * DELETE /projects/:id/files/:fileId — soft delete (move to the trash) of the node and, for folders,
+ * all live descendants, as one trash batch. Deleted text docs are compacted, unloaded and their connections closed
  * (`file-deleted`); onAuthenticate refuses them from now on. Clears the main file if deleted.
  */
 export async function deleteNode(s: Services, actor: SessionUser, a: Access, fileId: string | undefined): Promise<void> {
@@ -159,10 +165,16 @@ export async function deleteNode(s: Services, actor: SessionUser, a: Access, fil
     if (node.parentId === null) throw badRequest('The root folder cannot be deleted')
     const ids = new Set(subtreeIds(rows, node.id))
     const now = Date.now()
-    const del = s.db.prepare('UPDATE files SET deleted_at = ?, updated_at = ? WHERE id = ?')
-    for (const id of ids) del.run(now, now, id)
-    const mainCleared = s.db.prepare('UPDATE projects SET main_file_id = NULL WHERE id = ? AND main_file_id IN (SELECT value FROM json_each(?))')
-      .run(a.projectId, JSON.stringify([...ids])).changes > 0
+    // One trash batch for the node and its live descendants (docs/M2.md §1).
+    const batch = randomUUID()
+    const del = s.db.prepare('UPDATE files SET deleted_at = ?, updated_at = ?, deleted_by = ?, delete_batch = ? WHERE id = ?')
+    for (const id of ids) del.run(now, now, actor.id, batch, id)
+    const main = (s.db.prepare('SELECT main_file_id AS id FROM projects WHERE id = ?').get(a.projectId) as { id: string | null }).id
+    const mainCleared = main !== null && ids.has(main)
+    if (mainCleared) {
+      s.db.prepare('UPDATE projects SET main_file_id = NULL WHERE id = ?').run(a.projectId)
+      s.db.prepare('UPDATE files SET was_main = 1 WHERE id = ?').run(main)
+    }
     const docs = rows.filter(r => ids.has(r.id) && r.kind === 'text').map(r => fileDocName(a.projectId, r.id, r.epoch))
     audit(s.db, { actorId: actor.id, projectId: a.projectId, action: 'file-delete', detail: { fileId: node.id, name: node.name, count: ids.size } })
     return { docs, mainCleared, treeVersion: touchProject(s.db, a.projectId, true) }
@@ -170,6 +182,7 @@ export async function deleteNode(s: Services, actor: SessionUser, a: Access, fil
   // Same tick as the commit: no client update can slip in between.
   for (const d of res.docs) s.collab.closeDocConnections(d, 'file-deleted')
   s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion: res.treeVersion })
+  s.collab.broadcast(a.projectId, { type: 'trash-changed' })
   if (res.mainCleared) s.collab.broadcast(a.projectId, { type: 'project-changed' })
   await Promise.all(res.docs.map(d => s.collab.unloadDoc(d)))
 }

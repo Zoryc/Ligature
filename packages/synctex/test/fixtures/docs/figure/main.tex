@@ -1,0 +1,61 @@
+\documentclass{article}
+\usepackage{amsmath}
+\begin{document}
+\section{Figures}
+This document has a figure, which is a float:
+TeX moves it to the top of a page or to a page of its own,
+so the source lines of the figure end up far from the surrounding text.
+
+\begin{figure}[t]
+  \centering
+  \rule{0.6\textwidth}{4cm}
+  \caption{A black rectangle stands in for a picture.
+    The caption spans two source lines.}
+  \label{fig:rect}
+\end{figure}
+
+Figure~\ref{fig:rect} shows a rectangle.
+The text after the figure environment continues on the page where the float was defined,
+which may be before or after the float itself.
+
+\begin{figure}[p]
+  \centering
+  \fbox{\parbox{0.5\textwidth}{A framed paragraph inside a float that goes on a page of floats.
+  It has two lines in the source.}}
+  \caption{A float page.}
+\end{figure}
+
+\section{After the Figures}
+Some mathematics in display:
+\[
+  e^{i\pi} + 1 = 0
+\]
+and a multi-line display:
+\begin{gather}
+  a = b + c \\
+  d = e + f
+\end{gather}
+A minipage pair side by side:
+
+\noindent
+\begin{minipage}{0.45\textwidth}
+Left minipage text, which wraps inside its own narrow box.
+\end{minipage}\hfill
+\begin{minipage}{0.45\textwidth}
+Right minipage text, which also wraps inside a narrow box.
+\end{minipage}
+
+\vspace{1em}
+A tabular with a rule:
+\begin{center}
+\begin{tabular}{|l|l|}
+  \hline
+  key & value \\
+  \hline
+  one & 1 \\
+  two & 2 \\
+  \hline
+\end{tabular}
+\end{center}
+The end of the figure document.
+\end{document}

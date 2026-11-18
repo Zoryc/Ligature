@@ -2,27 +2,24 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as Y from 'yjs'
-import { ENGINES, fileDocName, isValidRelPath, type CompileStatus, type Engine, type Manifest } from '@ligature/shared'
+import { ENGINES, fileDocName, isValidRelPath, type BuildResult, type Diagnostic, type Engine, type Manifest } from '@ligature/shared'
 import type { DB } from '../db/index.ts'
 import type { Collab } from '../collab/collab.ts'
 import { TEXT_KEY, type DocStore } from '../collab/docStore.ts'
+import { ApiError } from '../errors.ts'
+import { detectMainFile } from '../files/mainFile.ts'
 import { filePaths, liveFiles, projectEngine } from '../projects/repo.ts'
+import { buildDir, latestBuildRecord, writeBuildRecord, type BuildRecord } from './builds.ts'
 import type { CompilerClient } from './compilerClient.ts'
+import { computeDiagnostics, mergeDiagnostics } from './diagnostics.ts'
+import { SynctexCache, type SynctexCacheOptions } from './synctex.ts'
 
-export interface BuildResult {
-  buildId: string
-  status: CompileStatus
-  durationMs: number
-  log: string
-  hasPdf: boolean
-  /** tree version + per-doc state vectors the build was made from (lets the client say "PDF is behind") */
-  snapshot: {
-    treeVersion: number
-    docs: Record<string, string /* base64 state vector */>
-    /** base64 Y.encodeSnapshot (state vector + delete set): lets the client also detect deletion-only edits */
-    docSnapshots: Record<string, string>
-  }
-}
+export type { BuildResult } from '@ligature/shared'
+
+/** Who asked for a build (BuildResult.startedBy is the display name). */
+export interface BuildRequester { id: string; displayName: string }
+
+export const NO_MAIN_FILE_MESSAGE = 'No main file: create main.tex or choose one in Settings'
 
 interface Snapshot {
   treeVersion: number
@@ -30,11 +27,30 @@ interface Snapshot {
   /** hash -> bytes, for text files (binaries are read from the blob store on demand) */
   textBlobs: Map<string, Buffer>
   binaryHashes: Set<string>
-  mainFile: string
+  /** Main file path; null when there is none and none could be detected. */
+  mainFile: string | null
+  /** Set when the main file was detected now (main_file_id was NULL): persist it. */
+  detectedMainId: string | null
   engine: Engine
   stateVectors: Record<string, string>
   docSnapshots: Record<string, string>
+  /** path -> file id */
+  paths: Record<string, string>
 }
+
+export interface OrchestratorOptions {
+  /** Builds running at once (compile slots). */
+  concurrency: number
+  /** Builds waiting for a slot, instance-wide, before new requests get `503 compiler-busy` (docs/M2.md §4). */
+  maxQueue: number
+  /** Builds one user may have waiting for a slot (fairness: one user cannot fill the queue); default 3. */
+  maxQueuePerUser?: number
+  /** Parsed SyncTeX indexes kept in memory (docs/M2.md §3). */
+  synctexCache?: SynctexCacheOptions
+}
+
+export const DEFAULT_MAX_COMPILE_QUEUE = 20
+export const DEFAULT_MAX_COMPILE_QUEUE_PER_USER = 3
 
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex')
 
@@ -51,8 +67,16 @@ class Semaphore {
 
 export class CompileOrchestrator {
   private readonly global: Semaphore
+  private readonly maxQueue: number
+  private readonly maxQueuePerUser: number
+  /** Builds created but not yet holding a compile slot. */
+  private waiting = 0
+  /** The same, per requesting user. */
+  private readonly waitingByUser = new Map<string, number>()
   /** Per-project single flight: the running build, and at most one queued follow-up shared by all waiters. */
   private readonly inflight = new Map<string, { running: Promise<BuildResult>; next: Promise<BuildResult> | null }>()
+  /** SyncTeX queries against stored builds, with the per-build index cache (docs/M2.md §3). */
+  readonly synctex: SynctexCache
 
   constructor(
     private readonly db: DB,
@@ -61,22 +85,40 @@ export class CompileOrchestrator {
     private readonly compiler: CompilerClient,
     private readonly outputsDir: string,
     private readonly blobsDir: string,
-    concurrency: number,
+    opts: OrchestratorOptions,
   ) {
-    this.global = new Semaphore(Math.max(1, concurrency))
+    this.global = new Semaphore(Math.max(1, opts.concurrency))
+    this.maxQueue = Math.max(0, opts.maxQueue)
+    this.maxQueuePerUser = Math.max(1, opts.maxQueuePerUser ?? DEFAULT_MAX_COMPILE_QUEUE_PER_USER)
+    this.synctex = new SynctexCache(outputsDir, opts.synctexCache)
   }
 
-  /** Request a compile. Requests made while a build runs collapse into one follow-up build. */
-  compile(projectId: string): Promise<BuildResult> {
+  /** Number of builds waiting for a compile slot. */
+  get queueLength(): number {
+    return this.waiting
+  }
+
+  /**
+   * Request a compile. Requests made while a build runs collapse into one follow-up build (its
+   * `startedBy` is whoever asked first). A request that would add a build while `maxQueue` builds are
+   * already waiting, or while the requester already has `maxQueuePerUser` builds waiting, is refused with
+   * `503 compiler-busy`; joining an existing follow-up never is.
+   */
+  compile(projectId: string, by: BuildRequester): Promise<BuildResult> {
     const st = this.inflight.get(projectId)
+    if (st?.next) return st.next
+    const mine = this.waitingByUser.get(by.id) ?? 0
+    if (this.waiting >= this.maxQueue || mine >= this.maxQueuePerUser) {
+      throw new ApiError(503, 'compiler-busy', 'The compiler is busy; try again in a moment')
+    }
+    this.waiting++
+    this.waitingByUser.set(by.id, mine + 1)
     if (!st) {
-      const running = this.run(projectId).finally(() => this.advance(projectId))
+      const running = this.run(projectId, by).finally(() => this.advance(projectId))
       this.inflight.set(projectId, { running, next: null })
       return running
     }
-    if (!st.next) {
-      st.next = st.running.catch(() => undefined).then(() => this.run(projectId))
-    }
+    st.next = st.running.catch(() => undefined).then(() => this.run(projectId, by))
     return st.next
   }
 
@@ -100,14 +142,16 @@ export class CompileOrchestrator {
     if (!proj) throw new Error('project not found')
     const treeVersion = (this.db.prepare('SELECT tree_version AS v FROM projects WHERE id = ?').get(projectId) as { v: number }).v
     const files = liveFiles(this.db, projectId)
-    const paths = filePaths(files)
+    const filePathById = filePaths(files)
     const manifest: Manifest = {}
     const textBlobs = new Map<string, Buffer>()
     const binaryHashes = new Set<string>()
     const stateVectors: Record<string, string> = {}
     const docSnapshots: Record<string, string> = {}
+    const paths: Record<string, string> = {}
+    const texts: { path: string; text: string; id: string }[] = []
     for (const f of files) {
-      const path = paths.get(f.id)
+      const path = filePathById.get(f.id)
       if (!path) continue
       if (!isValidRelPath(path)) throw new Error(`invalid path in tree: ${JSON.stringify(path)}`)
       if (f.kind === 'text') {
@@ -125,53 +169,105 @@ export class CompileOrchestrator {
         const h = sha256(buf)
         manifest[path] = h
         textBlobs.set(h, buf)
+        paths[path] = f.id
+        texts.push({ path, text, id: f.id })
       } else if (f.kind === 'binary' && f.blobHash) {
         manifest[path] = f.blobHash
         binaryHashes.add(f.blobHash)
+        paths[path] = f.id
       }
     }
-    const mainFile = (proj.mainFileId && paths.get(proj.mainFileId)) || 'main.tex'
+    let mainFile = proj.mainFileId ? filePathById.get(proj.mainFileId) ?? null : null
+    let detectedMainId: string | null = null
+    if (mainFile === null) {
+      mainFile = detectMainFile(texts)
+      detectedMainId = mainFile === null ? null : paths[mainFile] ?? null
+    }
     const engine = (ENGINES as readonly string[]).includes(proj.engine) ? proj.engine as Engine : 'pdflatex'
-    return { treeVersion, manifest, textBlobs, binaryHashes, mainFile, engine, stateVectors, docSnapshots }
+    return { treeVersion, manifest, textBlobs, binaryHashes, mainFile, detectedMainId, engine, stateVectors, docSnapshots, paths }
   }
 
-  private async run(projectId: string): Promise<BuildResult> {
-    const release = await this.global.acquire()
+  private async run(projectId: string, by: BuildRequester): Promise<BuildResult> {
+    let release: () => void
+    try {
+      release = await this.global.acquire()
+    } finally {
+      this.waiting--
+      const n = (this.waitingByUser.get(by.id) ?? 1) - 1
+      if (n <= 0) this.waitingByUser.delete(by.id)
+      else this.waitingByUser.set(by.id, n)
+    }
     const buildId = randomUUID()
     try {
       const snap = this.snapshot(projectId) // synchronous barrier, taken once we hold a compile slot
-      const { missing } = await this.compiler.sync(projectId, snap.manifest)
-      for (const h of missing) {
-        const data = snap.textBlobs.get(h) ?? (snap.binaryHashes.has(h) ? readFileSync(this.blobPath(h)) : null)
-        if (!data) throw new Error(`compiler asked for unknown blob ${h}`)
-        await this.compiler.putBlob(h, data)
-      }
-      const res = await this.compiler.compile(projectId, {
-        manifest: snap.manifest, mainFile: snap.mainFile, engine: snap.engine, timeoutMs: 90_000,
-      })
-      const dir = join(this.outputsDir, projectId, buildId)
-      mkdirSync(dir, { recursive: true })
+      if (snap.detectedMainId !== null) this.persistDetectedMain(projectId, snap.detectedMainId)
+      const startedAt = Date.now()
+      let status: BuildResult['status']
+      let log: string
+      let durationMs: number
       let hasPdf = false
-      for (const name of res.outputs) {
-        if (name !== 'output.pdf' && name !== 'output.synctex.gz') continue
-        const data = await this.compiler.output(projectId, name)
-        if (data) { writeFileSync(join(dir, name), data); if (name === 'output.pdf') hasPdf = true }
+      let extra: Diagnostic[] = []
+      const dir = buildDir(this.outputsDir, projectId, buildId)
+      if (snap.mainFile === null) {
+        status = 'failure'
+        log = `${NO_MAIN_FILE_MESSAGE}\n`
+        extra = [{ severity: 'error', kind: 'no-main-file', message: NO_MAIN_FILE_MESSAGE }]
+        durationMs = Date.now() - startedAt
+      } else {
+        const { missing } = await this.compiler.sync(projectId, snap.manifest)
+        for (const h of missing) {
+          const data = snap.textBlobs.get(h) ?? (snap.binaryHashes.has(h) ? readFileSync(this.blobPath(h)) : null)
+          if (!data) throw new Error(`compiler asked for unknown blob ${h}`)
+          await this.compiler.putBlob(h, data)
+        }
+        const res = await this.compiler.compile(projectId, {
+          manifest: snap.manifest, mainFile: snap.mainFile, engine: snap.engine, timeoutMs: 90_000,
+        })
+        mkdirSync(dir, { recursive: true })
+        for (const name of res.outputs) {
+          if (name !== 'output.pdf' && name !== 'output.synctex.gz') continue
+          const data = await this.compiler.output(projectId, name)
+          if (data) { writeFileSync(join(dir, name), data); if (name === 'output.pdf') hasPdf = true }
+        }
+        status = res.status
+        log = res.log
+        durationMs = res.durationMs
       }
-      writeFileSync(join(dir, 'output.log'), res.log)
-      const result: BuildResult = {
-        buildId, status: res.status, durationMs: res.durationMs, log: res.log, hasPdf,
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'output.log'), log)
+      const diagnostics = mergeDiagnostics(extra, computeDiagnostics({ log, paths: snap.paths, projectId }))
+      const record: BuildRecord = {
+        buildId, status, durationMs, log, hasPdf, diagnostics, startedBy: by.displayName,
         snapshot: { treeVersion: snap.treeVersion, docs: snap.stateVectors, docSnapshots: snap.docSnapshots },
+        paths: snap.paths, finishedAt: Date.now(),
       }
-      writeFileSync(join(dir, 'build.json'), JSON.stringify({ ...result, log: undefined }))
-      this.collab.broadcast(projectId, { type: 'compile-finished', buildId, status: res.status })
+      writeBuildRecord(this.outputsDir, projectId, record)
+      this.collab.broadcast(projectId, { type: 'compile-finished', buildId, status })
+      const { paths: _paths, finishedAt: _finishedAt, ...result } = record
       return result
     } finally {
       release()
     }
   }
 
+  /** Persist a main file chosen by detection (only if still unset) and tell clients. */
+  private persistDetectedMain(projectId: string, fileId: string): void {
+    const changed = this.db.prepare('UPDATE projects SET main_file_id = ? WHERE id = ? AND main_file_id IS NULL')
+      .run(fileId, projectId).changes > 0
+    if (changed) this.collab.broadcast(projectId, { type: 'project-changed' })
+  }
+
+  /** The most recent finished build of a project (stored record), or null. */
+  latest(projectId: string): BuildRecord | null {
+    return latestBuildRecord(this.outputsDir, projectId)
+  }
+
   outputPath(projectId: string, buildId: string, name: 'output.pdf' | 'output.log' | 'output.synctex.gz'): string {
     return join(this.outputsDir, projectId, buildId, name)
+  }
+
+  get outputs(): string {
+    return this.outputsDir
   }
 
   private blobPath(hash: string): string {

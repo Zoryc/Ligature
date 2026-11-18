@@ -1,0 +1,54 @@
+[
+  {
+    "severity": "error",
+    "kind": "bibtex",
+    "message": "I was expecting a `,' or a `}'",
+    "path": "refs.bib",
+    "line": 15,
+    "raw": "I was expecting a `,' or a `}'---line 15 of file refs.bib\n :\n :   author = {Broken Entry},\n(Error may have been on previous line)\nI'm skipping whatever remains of this entry"
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `knuth' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 3,
+    "raw": "LaTeX Warning: Citation `knuth' on page 1 undefined on input line 3."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `incomplete' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 3,
+    "raw": "LaTeX Warning: Citation `incomplete' on page 1 undefined on input line 3."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `missingkey' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 3,
+    "raw": "LaTeX Warning: Citation `missingkey' on page 1 undefined on input line 3."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "There were undefined references.",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: There were undefined references."
+  },
+  {
+    "severity": "warning",
+    "kind": "bibtex",
+    "message": "I didn't find a database entry for \"missingkey\"",
+    "raw": "Warning--I didn't find a database entry for \"missingkey\""
+  },
+  {
+    "severity": "warning",
+    "kind": "bibtex",
+    "message": "empty journal in incomplete",
+    "path": "refs.bib",
+    "raw": "Warning--empty journal in incomplete"
+  }
+]

@@ -2,11 +2,12 @@ import { createReadStream, existsSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { can, ENGINES, OUTPUT_NAMES, type ProjectDetail, type ProjectSummary } from '@ligature/shared'
+import { can, ENGINES, OUTPUT_NAMES, type BuildResult, type ProjectDetail, type ProjectSummary } from '@ligature/shared'
 import { ApiError, notFound } from '../../errors.ts'
 import { listProjects, projectDetail } from '../../projects/repo.ts'
 import { createProject, deleteProject, requireAccess, requireRole, updateProject } from '../../projects/service.ts'
 import { isUuid } from '../../services.ts'
+import { toBuildResult } from '../../compile/builds.ts'
 import { readJson, type Env, type RouteDeps } from '../context.ts'
 
 const createSchema = z.strictObject({ name: z.string().max(1000) })
@@ -49,13 +50,33 @@ export function projectRoutes(deps: RouteDeps): Hono<Env> {
   app.post('/projects/:id/compile', async c => {
     const a = requireAccess(db, c.req.param('id'), c.get('user').id)
     requireRole(a, can.compile)
+    const user = c.get('user')
+    if (!deps.limiters.compile.consume(user.id)) {
+      throw new ApiError(429, 'rate-limited', 'Too many compiles; try again in a few minutes')
+    }
+    let build: Promise<BuildResult>
     try {
-      return c.json(await deps.compile.compile(a.projectId))
+      build = deps.compile.compile(a.projectId, user)
     } catch (e) {
+      deps.limiters.compile.refund(user.id) // refused before anything ran (compiler-busy)
+      throw e
+    }
+    try {
+      return c.json(await build satisfies BuildResult)
+    } catch (e) {
+      if (e instanceof ApiError) throw e
       // Details (socket paths, internal addresses) go to the server log only.
       console.error('compile failed', e)
       throw new ApiError(503, 'compiler-unavailable', 'The compile service is unavailable; try again later')
     }
+  })
+
+  /** The most recent finished build (any member), or 404 'no-build'. */
+  app.get('/projects/:id/builds/latest', c => {
+    const a = requireAccess(db, c.req.param('id'), c.get('user').id)
+    const rec = deps.compile.latest(a.projectId)
+    if (!rec) throw new ApiError(404, 'no-build', 'This project has no finished build yet')
+    return c.json(toBuildResult(rec) satisfies BuildResult, 200, { 'cache-control': 'private, no-cache' })
   })
 
   app.get('/projects/:id/builds/:buildId/:name', c => {

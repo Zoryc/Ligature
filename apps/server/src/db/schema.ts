@@ -105,4 +105,30 @@ export const MIGRATIONS: string[] = [
   -- An existing instance (M0) has no admin yet: the oldest account becomes admin.
   UPDATE users SET is_admin = 1 WHERE id = (SELECT id FROM users ORDER BY created_at, rowid LIMIT 1);
   `,
+
+  /* 3: M2 — trash can (docs/M2.md §1) */ `
+  ALTER TABLE files ADD COLUMN deleted_by TEXT;          -- user id
+  ALTER TABLE files ADD COLUMN delete_batch TEXT;        -- uuid shared by everything removed in one deletion
+  CREATE INDEX files_trash ON files(project_id, delete_batch) WHERE deleted_at IS NOT NULL;
+  -- Implementation details of the trash (not in the spec's SQL):
+  -- the row's parent was purged while this row was still in the trash (its parent_id now points at the root)
+  ALTER TABLE files ADD COLUMN trash_orphan INTEGER NOT NULL DEFAULT 0;
+  -- the row was the project's main file when it was deleted (restoring it sets the main file back)
+  ALTER TABLE files ADD COLUMN was_main INTEGER NOT NULL DEFAULT 0;
+
+  -- Rows deleted before this migration have no batch: each top-level deleted row (parent live, or deleted
+  -- at a different time) becomes its own batch, named by its id; its descendants deleted at the same time join it.
+  WITH RECURSIVE b(id, batch, at) AS (
+    SELECT c.id, c.id, c.deleted_at FROM files c LEFT JOIN files p ON p.id = c.parent_id
+      WHERE c.deleted_at IS NOT NULL AND (p.id IS NULL OR p.deleted_at IS NULL OR p.deleted_at <> c.deleted_at)
+    UNION ALL
+    SELECT c.id, b.batch, c.deleted_at FROM files c JOIN b ON c.parent_id = b.id WHERE c.deleted_at = b.at
+  )
+  UPDATE files SET delete_batch = (SELECT batch FROM b WHERE b.id = files.id) WHERE deleted_at IS NOT NULL;
+  -- Who deleted them, when the M1 audit log knows.
+  UPDATE files SET deleted_by = (SELECT a.actor_id FROM audit_log a WHERE a.action = 'file-delete'
+      AND a.project_id = files.project_id AND json_extract(a.detail_json, '$.fileId') = files.delete_batch
+      ORDER BY a.id DESC LIMIT 1)
+    WHERE deleted_at IS NOT NULL;
+  `,
 ]

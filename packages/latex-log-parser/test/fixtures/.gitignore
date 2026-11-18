@@ -1,0 +1,2 @@
+# The fixture logs are committed test data (the repo ignores *.log elsewhere).
+!*.log

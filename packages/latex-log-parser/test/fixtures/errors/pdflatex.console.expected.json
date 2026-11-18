@@ -1,0 +1,73 @@
+[
+  {
+    "severity": "error",
+    "kind": "latex",
+    "message": "Unknown option 'nosuchopt' for package xcolor.",
+    "path": "main.tex",
+    "raw": "/usr/local/texlive/2026/texmf-dist/tex/latex/xcolor/xcolor.sty:265: LaTeX Error: Unknown option 'nosuchopt' for package xcolor.\n\nFor immediate help type H <return>.\n ->\\tex_errmessage:D  LaTeX Error: Unknown option 'nosuchopt' for package xcolor.\n\nFor immediate help type H <return>\\use_none:n\n\nl.265 \\ProcessKeyOptions\\relax"
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Undefined control sequence \\undefinedmacro",
+    "path": "main.tex",
+    "line": 4,
+    "raw": "./main.tex:4: Undefined control sequence.\nl.4 Some text with an \\undefinedmacro\n                                     {} in the middle."
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Undefined control sequence \\alsoundefined",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "./main.tex:6: Undefined control sequence.\n<argument> Bold \\alsoundefined\n                               {} text\nl.6 \\textbf{Bold \\alsoundefined{} text}"
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Missing $ inserted.",
+    "path": "main.tex",
+    "line": 8,
+    "raw": "./main.tex:8: Missing $ inserted.\n<inserted text>\n                $\nl.8 A formula x^\n                2 outside math mode."
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Missing $ inserted.",
+    "path": "main.tex",
+    "line": 9,
+    "raw": "./main.tex:9: Missing $ inserted.\n<inserted text>\n                $\nl.9"
+  },
+  {
+    "severity": "error",
+    "kind": "latex",
+    "message": "Environment nosuchenv undefined.",
+    "path": "main.tex",
+    "line": 10,
+    "raw": "./main.tex:10: LaTeX Error: Environment nosuchenv undefined.\n\nSee the LaTeX manual or LaTeX Companion for explanation.\nType  H <return>  for immediate help.\n ->\\errmessage  LaTeX Error: Environment nosuchenv undefined.\n\nSee the LaTeX manual or LaTeX Companion for explanation.\nType  H <return>  for immediate help\\@err@\n\nl.10 \\begin{nosuchenv}"
+  },
+  {
+    "severity": "error",
+    "kind": "latex",
+    "message": "\\begin{document} ended by \\end{nosuchenv}.",
+    "path": "main.tex",
+    "line": 12,
+    "raw": "./main.tex:12: LaTeX Error: \\begin{document} ended by \\end{nosuchenv}.\n\nSee the LaTeX manual or LaTeX Companion for explanation.\nType  H <return>  for immediate help.\n ...rrenvline \\space ended by \\protect \\end {\\detokenize {nosuchenv}}.\n\nSee the LaTeX manual or LaTeX Companion for explanation.\nType  H <return>  for immediate help\\@err@\n\nl.12 \\end{nosuchenv}"
+  },
+  {
+    "severity": "error",
+    "kind": "package:xcolor",
+    "message": "Undefined color `nosuchcolor'.",
+    "path": "main.tex",
+    "line": 14,
+    "raw": "./main.tex:14: Package xcolor Error: Undefined color `nosuchcolor'.\n\nSee the xcolor package documentation for explanation.\nType  H <return>  for immediate help.\n ->\\errmessage  Package xcolor Error: Undefined color `\\@@nam '.\n\nSee the xcolor package documentation for explanation.\nType  H <return>  for immediate help\\@err@\n\nl.14 \\textcolor{nosuchcolor}{coloured (text}"
+  },
+  {
+    "severity": "error",
+    "kind": "latex",
+    "message": "\\begin{itemize} on input line 16 ended by \\end{enumerate}.",
+    "path": "main.tex",
+    "line": 18,
+    "raw": "./main.tex:18: LaTeX Error: \\begin{itemize} on input line 16 ended by \\end{enumerate}.\n\nSee the LaTeX manual or LaTeX Companion for explanation.\nType  H <return>  for immediate help.\n ...rrenvline \\space ended by \\protect \\end {\\detokenize {enumerate}}.\n\nSee the LaTeX manual or LaTeX Companion for explanation.\nType  H <return>  for immediate help\\@err@\n\nl.18 \\end{enumerate}"
+  }
+]

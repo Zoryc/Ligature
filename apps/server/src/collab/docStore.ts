@@ -13,6 +13,9 @@ const COMPACT_EVERY = 500
 
 interface Pending { docName: string; seq: number; update: Uint8Array; userId: string | null; ts: number }
 
+/** A seeded doc's initial state, computed ahead of the write (`DocStore.prepareSeed`). */
+export interface PreparedSeed { state: Uint8Array; text: string; hash: string }
+
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
 
 /**
@@ -126,11 +129,23 @@ export class DocStore {
 
   /** Create the initial state of a new text doc. Only the server ever seeds content. */
   seed(docName: string, initialText: string): void {
+    this.seedPrepared(docName, DocStore.prepareSeed(initialText))
+  }
+
+  /**
+   * The CPU-heavy half of `seed` (Yjs encoding, hashing), without touching the database: bulk writers
+   * (zip import) prepare their docs in small async steps, then only write rows inside their transaction.
+   */
+  static prepareSeed(initialText: string): PreparedSeed {
     const doc = new Y.Doc({ gc: true })
     doc.getText(TEXT_KEY).insert(0, initialText)
     const state = Y.encodeStateAsUpdate(doc)
-    this.stmt.upsertState.run(docName, 0, state, initialText, sha256(initialText), Date.now())
     doc.destroy()
+    return { state, text: initialText, hash: sha256(initialText) }
+  }
+
+  seedPrepared(docName: string, p: PreparedSeed): void {
+    this.stmt.upsertState.run(docName, 0, p.state, p.text, p.hash, Date.now())
   }
 
   /**

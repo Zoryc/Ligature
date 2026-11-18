@@ -1,0 +1,9 @@
+[
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Emergency stop (job aborted, no legal \\end found)",
+    "path": "main.tex",
+    "raw": "! Emergency stop.\n<*> main.tex\n\n*** (job aborted, no legal \\end found)"
+  }
+]

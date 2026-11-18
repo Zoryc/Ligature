@@ -1,0 +1,10 @@
+{
+  "name": "@ligature/latex-log-parser",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -p .", "test": "vitest run" },
+  "devDependencies": { "typescript": "^7.0.2", "vitest": "^5.1.0", "@types/node": "^24" }
+}

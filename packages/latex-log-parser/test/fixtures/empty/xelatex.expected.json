@@ -1,0 +1,9 @@
+[
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "No pages of output.",
+    "path": "main.tex",
+    "raw": "No pages of output."
+  }
+]

@@ -1,0 +1,6 @@
+export { parseSynctex } from './parse.ts'
+export { view, type ViewQuery } from './view.ts'
+export { edit, type EditQuery, type EditResult, type EditOptions } from './edit.ts'
+export { SynctexError, type SynctexErrorCode } from './errors.ts'
+export { normalizePath, tagsForPath } from './paths.ts'
+export { Kind, DEFAULT_MAX_CHARS, DEFAULT_MAX_RECORDS, type SynctexIndex, type SynctexLimits } from './types.ts'

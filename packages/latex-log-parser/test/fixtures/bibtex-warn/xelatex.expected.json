@@ -1,0 +1,17 @@
+[
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `missingkey' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "There were undefined citations.",
+    "path": "main.tex",
+    "raw": "Package natbib Warning: There were undefined citations."
+  }
+]

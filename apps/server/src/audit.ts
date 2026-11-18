@@ -6,6 +6,8 @@ export type AuditAction =
   | 'member-add' | 'member-role-change' | 'member-remove' | 'ownership-transfer'
   | 'invite-create' | 'invite-revoke' | 'invite-accept'
   | 'project-create' | 'project-delete' | 'file-delete'
+  // M2 (names as in docs/M2.md §1)
+  | 'file.restore' | 'file.purge' | 'trash.empty'
 
 export interface AuditEntry {
   actorId: string | null

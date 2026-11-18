@@ -15,6 +15,9 @@ const ALLOWED_ORIGINS = new Set((env.ALLOWED_ORIGINS ?? (PROD ? '' : 'http://loc
 const DEV_ENV = !PROD && [undefined, '', 'development', 'test'].includes(env.NODE_ENV)
 const DEV_LOGIN = DEV_ENV && env.DEV_LOGIN !== '0'
 const WEB_DIST_DIR = resolve(env.WEB_DIST_DIR ?? resolve(import.meta.dirname, '../../web/dist'))
+// Trash retention in days (docs/M2.md §1), default 30.
+const TRASH_RETENTION_DAYS = env.TRASH_RETENTION_DAYS === undefined || env.TRASH_RETENTION_DAYS === '' ? 30 : Number(env.TRASH_RETENTION_DAYS)
+if (!Number.isFinite(TRASH_RETENTION_DAYS) || TRASH_RETENTION_DAYS <= 0) throw new Error('TRASH_RETENTION_DAYS must be a positive number')
 
 if (PROD && ALLOWED_ORIGINS.size === 0) throw new Error('ALLOWED_ORIGINS must be set in production')
 if (PROD && COMPILER_URL.startsWith('http:') && env.ALLOW_TCP_COMPILER !== '1') {
@@ -26,6 +29,7 @@ const app = startLigature({
   isAllowedOrigin: originChecker(ALLOWED_ORIGINS, !PROD),
   production: PROD, devLogin: DEV_LOGIN, seed: DEV_ENV, trustProxy: env.TRUST_PROXY === '1',
   webDistDir: WEB_DIST_DIR,
+  limits: { trashRetentionMs: TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000 },
 })
 
 app.listening.then(() => {

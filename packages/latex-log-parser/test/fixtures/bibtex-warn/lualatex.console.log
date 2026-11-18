@@ -1,0 +1,220 @@
+Initial Win CP for (console input, console output, system): (CP850, CP850, CP1252)
+I changed them all to CP1252
+Rc files read (in order):
+  NONE
+Latexmk: This is Latexmk, John Collins, 8 November 2026. Version 4.89.
+No existing .aux file, so I'll make a simple one, and require run of *latex.
+Latexmk: applying rule 'lualatex'...
+Rule 'lualatex':  Reasons for rerun
+Category 'other':
+  Rerun of 'lualatex' forced or previously required:
+    Reason or flag: 'Initial setup'
+
+------------
+Run number 1 of rule 'lualatex'
+------------
+------------
+Running 'lualatex  -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is LuaHBTeX, Version 1.24.0 (TeX Live 2026) 
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+ (/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/natbib/natbib.sty) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-luatex.def) ("/srv/ligature builds/b1/out/output.aux")
+
+Package natbib Warning: Citation `knuth' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `incomplete' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6.
+
+No file output.bbl.
+
+Package natbib Warning: There were undefined citations.
+
+[1{/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] ("/srv/ligature builds/b1/out/output.aux"))
+ 416 words of node memory still in use:
+   3 hlist, 1 vlist, 1 rule, 2 glue, 3 kern, 1 glyph, 4 attribute, 50 glue_spec, 4 attribute_list, 1 write nodes
+   avail lists: 2:42,3:6,4:1,5:23,6:4,7:108,9:22,11:6
+</usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-bold.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-regular.otf>
+Output written on output.pdf (1 page, 5696 bytes).
+
+SyncTeX written on output.synctex.gz.
+Transcript written on output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Log file says output to 'output.pdf'
+  ===Source file '/srv/ligature builds/b1/out/output.bbl' for 'lualatex'
+Latexmk: Creating rule bibtex /srv/ligature builds/b1/out/output
+Latexmk: Found bibliography file(s):
+  ./bib/refs.bib
+Latexmk: applying rule 'bibtex /srv/ligature builds/b1/out/output'...
+Rule 'bibtex /srv/ligature builds/b1/out/output':  Reasons for rerun
+Category 'other':
+  Rerun of 'bibtex /srv/ligature builds/b1/out/output' forced or previously required:
+    Reason or flag: 'Initial set up of rule'
+
+------------
+Run number 1 of rule 'bibtex /srv/ligature builds/b1/out/output'
+------------
+Latexmk: Change directory to '/srv/ligature builds/b1/out/'.
+To assist finding of files in document directory, I set
+  BIBINPUTS='/srv/ligature builds/b1/src;/srv/ligature builds/b1/out;'
+  BSTINPUTS='/srv/ligature builds/b1/src;'.
+------------
+Running 'bibtex  "output.aux"'
+------------
+This is BibTeX, Version 0.99e (TeX Live 2026)
+The top-level auxiliary file: output.aux
+The style file: plainnat.bst
+Database file #1: bib/refs.bib
+Warning--string name "undefinedmacro" is undefined
+--line 14 of file bib/refs.bib
+Warning--I didn't find a database entry for "missingkey"
+Warning--empty journal in incomplete
+(There were 3 warnings)
+Latexmk: Change directory back to '/srv/ligature builds/b1/src'
+Latexmk: applying rule 'lualatex'...
+Rule 'lualatex':  Reasons for rerun
+Changed files or newly in use/created:
+  /srv/ligature builds/b1/out/output.aux
+  /srv/ligature builds/b1/out/output.bbl
+
+------------
+Run number 2 of rule 'lualatex'
+------------
+------------
+Running 'lualatex  -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is LuaHBTeX, Version 1.24.0 (TeX Live 2026) 
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+ (/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/natbib/natbib.sty) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-luatex.def) ("/srv/ligature builds/b1/out/output.aux")
+
+Package natbib Warning: Citation `knuth' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `incomplete' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6.
+
+("/srv/ligature builds/b1/out/output.bbl")
+
+Package natbib Warning: There were undefined citations.
+
+[1{/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] ("/srv/ligature builds/b1/out/output.aux"
+
+Package natbib Warning: Citation(s) may have changed.
+(natbib)                Rerun to get citations correct.
+
+))
+ 416 words of node memory still in use:
+   3 hlist, 1 vlist, 1 rule, 2 glue, 3 kern, 1 glyph, 4 attribute, 50 glue_spec, 4 attribute_list, 1 write nodes
+   avail lists: 2:88,3:26,4:1,5:32,6:10,7:420,9:40,11:24
+</usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-italic.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman12-bold.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-bold.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-regular.otf>
+Output written on output.pdf (1 page, 12518 bytes).
+
+SyncTeX written on output.synctex.gz.
+Transcript written on output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Found input bbl file '/srv/ligature builds/b1/out/output.bbl'
+Latexmk: References changed.
+Latexmk: Log file says output to 'output.pdf'
+  ===Source file '/srv/ligature builds/b1/out/output.bbl' for 'lualatex'
+Latexmk: Creating rule bibtex /srv/ligature builds/b1/out/output
+Latexmk: Found bibliography file(s):
+  ./bib/refs.bib
+Latexmk: applying rule 'bibtex /srv/ligature builds/b1/out/output'...
+Rule 'bibtex /srv/ligature builds/b1/out/output':  Reasons for rerun
+Category 'other':
+  Rerun of 'bibtex /srv/ligature builds/b1/out/output' forced or previously required:
+    Reason or flag: 'Initial set up of rule'
+
+------------
+Run number 1 of rule 'bibtex /srv/ligature builds/b1/out/output'
+------------
+Latexmk: Change directory to '/srv/ligature builds/b1/out/'.
+To assist finding of files in document directory, I set
+  BIBINPUTS='/srv/ligature builds/b1/src;/srv/ligature builds/b1/out;'
+  BSTINPUTS='/srv/ligature builds/b1/src;'.
+------------
+Running 'bibtex  "output.aux"'
+------------
+This is BibTeX, Version 0.99e (TeX Live 2026)
+The top-level auxiliary file: output.aux
+The style file: plainnat.bst
+Database file #1: bib/refs.bib
+Warning--string name "undefinedmacro" is undefined
+--line 14 of file bib/refs.bib
+Warning--I didn't find a database entry for "missingkey"
+Warning--empty journal in incomplete
+(There were 3 warnings)
+Latexmk: Change directory back to '/srv/ligature builds/b1/src'
+Latexmk: applying rule 'lualatex'...
+Rule 'lualatex':  Reasons for rerun
+Changed files or newly in use/created:
+  /srv/ligature builds/b1/out/output.aux
+  /srv/ligature builds/b1/out/output.aux
+Category 'changed_user':
+  /srv/ligature builds/b1/out/output.aux
+
+------------
+Run number 3 of rule 'lualatex'
+------------
+------------
+Running 'lualatex  -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is LuaHBTeX, Version 1.24.0 (TeX Live 2026) 
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+ (/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/natbib/natbib.sty) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-luatex.def) ("/srv/ligature builds/b1/out/output.aux")
+
+Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6.
+
+("/srv/ligature builds/b1/out/output.bbl")
+
+Package natbib Warning: There were undefined citations.
+
+[1{/usr/local/texlive/2026/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] ("/srv/ligature builds/b1/out/output.aux"))
+ 416 words of node memory still in use:
+   3 hlist, 1 vlist, 1 rule, 2 glue, 3 kern, 1 glyph, 4 attribute, 50 glue_spec, 4 attribute_list, 1 write nodes
+   avail lists: 2:92,3:26,4:1,5:34,6:10,7:468,9:40,11:26
+</usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-italic.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman12-bold.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-bold.otf></usr/local/texlive/2026/texmf-dist/fonts/opentype/public/lm/lmroman10-regular.otf>
+Output written on output.pdf (1 page, 12572 bytes).
+
+SyncTeX written on output.synctex.gz.
+Transcript written on output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Found input bbl file '/srv/ligature builds/b1/out/output.bbl'
+Latexmk: Log file says output to 'output.pdf'
+  ===Source file '/srv/ligature builds/b1/out/output.bbl' for 'lualatex'
+Latexmk: Found bibliography file(s):
+  ./bib/refs.bib
+Latexmk: Summary of warnings from last run of *latex:
+  Latex failed to resolve 1 citation(s)
+Latexmk: All targets (/srv/ligature builds/b1/out/output.pdf) are up-to-date
+
+Latexmk: Missing bbl file '/srv/ligature builds/b1/out/output.bbl' in following:
+ No file output.bbl.
+Latexmk: Using bibtex to make bibliography file(s).
+Latexmk: Using bibtex to make bibliography file(s).
+Latexmk: Using bibtex to make bibliography file(s).
+Latexmk: ====Problematic refs and citations with line #s in .tex file:
+  Citation `missingkey' on page 1 undefined on input line 6
+Reverting Windows console CPs to (in,out) = (850,850)

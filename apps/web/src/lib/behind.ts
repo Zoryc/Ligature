@@ -115,3 +115,13 @@ export class BehindTracker {
     return dsAhead(now.ds, base.ds)
   }
 }
+
+/**
+ * The tracker after a build is shown. "PDF is behind" is about the PDF on screen, and a build without a
+ * PDF (a failed compile) leaves the older PDF there: keep its tracker. A build with a PDF but no
+ * snapshot cannot be compared (null).
+ */
+export function trackerAfterBuild(current: BehindTracker | null, r: { hasPdf: boolean; snapshot?: BuildDocState | null | undefined }): BehindTracker | null {
+  if (!r.hasPdf) return current
+  return r.snapshot ? new BehindTracker(r.snapshot) : null
+}

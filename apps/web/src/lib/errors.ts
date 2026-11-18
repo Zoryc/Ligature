@@ -23,6 +23,9 @@ const MESSAGES: Record<string, string> = {
   'forbidden': 'You do not have permission to do that.',
   'unauthenticated': 'Your session has expired. Log in again.',
   'compiler-unavailable': 'The compiler is unavailable right now.',
+  'compiler-busy': 'The compiler is busy with other builds. Try again in a moment.',
+  'no-build': 'This project has not been compiled yet.',
+  'bad-zip': 'This file is not a usable zip archive.',
   'network': 'Cannot reach the server. Check your connection and try again.',
 }
 
@@ -31,7 +34,7 @@ const MESSAGES: Record<string, string> = {
  * login/invite attempts and the upload byte budget ("Upload volume limit reached"); the generic text
  * is only used when the server sent no message.
  */
-const PREFER_SERVER_MESSAGE = new Set(['bad-request', 'too-large', 'project-too-large', 'kind-mismatch', 'rate-limited'])
+const PREFER_SERVER_MESSAGE = new Set(['bad-request', 'too-large', 'project-too-large', 'kind-mismatch', 'rate-limited', 'bad-zip'])
 
 interface ErrorLike { code?: unknown; message?: unknown; status?: unknown }
 

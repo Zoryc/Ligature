@@ -1,0 +1,50 @@
+\documentclass{article}
+\usepackage{amsmath}
+\title{A Multi-File Fixture}
+\author{Ligature Tests}
+\date{}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+This document is split over several files.
+The main file holds the introduction and the conclusion,
+while the chapters live in a subfolder.
+Each sentence sits on its own source line, so that forward and inverse
+search can be checked line by line.
+
+Here is a second paragraph with some inline mathematics, $a^2 + b^2 = c^2$,
+and a displayed equation:
+\begin{equation}
+  \int_0^1 x^2 \, dx = \frac{1}{3}
+\end{equation}
+followed by more text after the equation, which continues the paragraph.
+
+\input{chapters/intro}
+
+\section{Lists}
+\begin{itemize}
+  \item The first item of the list.
+  \item A second item that is long enough to wrap onto a second line of output when typeset in the default article layout.
+  \item A third item.
+\end{itemize}
+\begin{enumerate}
+  \item Numbered one.
+  \item Numbered two, with a footnote.\footnote{This is the footnote text.}
+\end{enumerate}
+
+\input{chapters/details/deep}
+
+\section{Conclusion}
+The conclusion is back in the main file.
+It refers to Section~\ref{sec:intro} and to the table on page~\pageref{tab:small}.
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lcr}
+    left & centre & right \\
+    alpha & beta & gamma \\
+  \end{tabular}
+  \caption{A small table.}\label{tab:small}
+\end{table}
+That is all.
+\end{document}

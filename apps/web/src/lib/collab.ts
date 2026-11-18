@@ -48,6 +48,8 @@ export interface FileSession {
   ytext: Y.Text
   awareness: Awareness
   undoManager: Y.UndoManager
+  /** Was a Y.Doc update with this origin made here (typing, undo) rather than received from the server? */
+  isLocal(origin: unknown): boolean
   /** Re-authenticate after the server closed this doc (e.g. role-changed); keeps the Y.Doc. No-op otherwise. */
   reconnect(): void
   close(): void
@@ -180,6 +182,7 @@ export class ProjectCollab {
     const undoManager = new Y.UndoManager(ytext)
     const session: FileSession = {
       fileId, epoch, doc, ytext, awareness, undoManager,
+      isLocal: origin => origin !== provider,
       reconnect: () => {
         if (closed) return
         if (serverClosed.closed) bumpPresence(awareness)

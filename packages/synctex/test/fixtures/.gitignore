@@ -1,0 +1,2 @@
+# The oracle fixtures are committed on purpose (the root .gitignore ignores *.synctex.gz).
+!*.synctex.gz

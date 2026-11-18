@@ -1,3 +1,5 @@
+import type { Diagnostic } from '@ligature/shared'
+
 /** Very small log reader: picks out `-file-line-error` lines ("./main.tex:12: Undefined control sequence."). */
 
 export interface LogLine {
@@ -27,6 +29,8 @@ export interface LogInfo {
   status: string
   durationMs: number | null
   log: string
-  /** e.g. "your compile" or "compiled by a collaborator" */
+  /** Problems parsed by the server (empty when unknown). */
+  diagnostics: Diagnostic[]
+  /** e.g. "your compile" or "compiled by Alice" */
   source?: string
 }

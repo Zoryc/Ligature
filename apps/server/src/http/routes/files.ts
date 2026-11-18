@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
-import { Hono, type Context } from 'hono'
+import { Hono } from 'hono'
 import { z } from 'zod'
 import { fileDocName, type TreeEntry } from '@ligature/shared'
 import { ApiError, notFound } from '../../errors.ts'
@@ -10,6 +10,7 @@ import { createNode, deleteNode, requireNode, treeRows, updateNode } from '../..
 import { uploadFile } from '../../files/upload.ts'
 import { requireAccess } from '../../projects/service.ts'
 import { readJson, type Env, type RouteDeps } from '../context.ts'
+import { contentDisposition, declaredLength, readRawBody } from '../body.ts'
 
 const createSchema = z.strictObject({
   parentId: z.string().max(64),
@@ -18,46 +19,6 @@ const createSchema = z.strictObject({
   content: z.string().optional(),
 })
 const updateSchema = z.strictObject({ name: z.string().max(1024).optional(), parentId: z.string().max(64).optional() })
-
-/** The declared Content-Length of an upload, checked against `max` (nothing is read yet). */
-function declaredLength(c: Context, max: number): number {
-  const lenHeader = c.req.header('content-length')
-  if (lenHeader === undefined || !/^[0-9]+$/.test(lenHeader)) throw new ApiError(411, 'length-required', 'Content-Length is required')
-  const len = Number(lenHeader)
-  if (len > max) throw new ApiError(413, 'too-large', `Uploads are limited to ${Math.round(max / 1048576)} MB`)
-  return len
-}
-
-/**
- * Read a raw request body of exactly `len` bytes. Memory grows with the bytes that actually arrive
- * (never pre-allocated from the declared length). A client abort is a 400, not a server error.
- */
-async function readRawBody(c: Context, len: number): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = []
-  let off = 0
-  const body = c.req.raw.body
-  if (body) {
-    try {
-      for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
-        if (off + chunk.byteLength > len) throw new ApiError(400, 'bad-request', 'Body longer than Content-Length')
-        chunks.push(chunk)
-        off += chunk.byteLength
-      }
-    } catch (e) {
-      if (e instanceof ApiError) throw e
-      throw new ApiError(400, 'bad-request', 'Upload aborted')
-    }
-  }
-  if (off !== len) throw new ApiError(400, 'bad-request', 'Body shorter than Content-Length')
-  return Buffer.concat(chunks, len)
-}
-
-/** `attachment|inline; filename="ascii"; filename*=UTF-8''pct` (RFC 6266 / 5987). */
-function contentDisposition(kind: 'attachment' | 'inline', name: string): string {
-  const ascii = name.replace(/[^\x20-\x7e]|["\\%]/g, '_')
-  const encoded = encodeURIComponent(name).replace(/['()*]/g, ch => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`)
-  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encoded}`
-}
 
 export function fileRoutes(deps: RouteDeps): Hono<Env> {
   const { db } = deps

@@ -1,23 +1,12 @@
 import type {
-  AcceptInviteResponse, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, CompileStatus, CreatedInvite,
-  CreateFileRequest, CreateInviteRequest, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me, Member,
-  ProjectDetail, ProjectSummary, SignupRequest, TreeEntry, UpdateFileRequest, UpdateProjectRequest, UploadResponse,
+  AcceptInviteResponse, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, BuildResult, CreatedInvite,
+  CreateFileRequest, CreateInviteRequest, ImportResponse, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me,
+  Member, OutputName, ProjectDetail, ProjectSummary, RestoreRequest, RestoreResponse, SignupRequest,
+  SynctexEditResponse, SynctexViewResponse, TrashEntry, TreeEntry, UpdateFileRequest, UpdateProjectRequest,
+  UploadResponse,
 } from '@ligature/shared'
 
-/** Mirror of the server's BuildResult (apps/server/src/compile/orchestrator.ts). */
-export interface BuildResult {
-  buildId: string
-  status: CompileStatus
-  durationMs: number
-  log: string
-  hasPdf: boolean
-  /**
-   * treeVersion + per-file (by file id) base64 Yjs state vectors the build was made from.
-   * docSnapshots (optional; base64 Y.encodeSnapshot, i.e. state vector + delete set) lets the client
-   * also notice deletion-only edits; see behind.ts. Older servers do not send it.
-   */
-  snapshot: { treeVersion: number; docs: Record<string, string>; docSnapshots?: Record<string, string> }
-}
+export type { BuildResult }
 
 export class ApiError extends Error {
   readonly status: number
@@ -91,6 +80,13 @@ export const api = {
   updateProject: (id: string, req: UpdateProjectRequest) => request<ProjectDetail>('PATCH', p(id), req),
   deleteProject: (id: string) => request<{ ok: true }>('DELETE', p(id)),
   compile: (id: string) => request<BuildResult>('POST', `${p(id)}/compile`),
+  /** The most recent finished build; 404 'no-build' when there is none. */
+  latestBuild: (id: string) => request<BuildResult>('GET', `${p(id)}/builds/latest`),
+  synctexView: (id: string, buildId: string, fileId: string, line: number, column?: number) =>
+    request<SynctexViewResponse>('GET', `${p(id)}/builds/${enc(buildId)}/synctex/view?fileId=${enc(fileId)}&line=${line}`
+      + (column !== undefined ? `&column=${column}` : '')),
+  synctexEdit: (id: string, buildId: string, page: number, x: number, y: number) =>
+    request<SynctexEditResponse>('GET', `${p(id)}/builds/${enc(buildId)}/synctex/edit?page=${page}&x=${x}&y=${y}`),
 
   // members + invites
   members: (id: string) => request<Member[]>('GET', `${p(id)}/members`),
@@ -108,6 +104,18 @@ export const api = {
   createFile: (id: string, req: CreateFileRequest) => request<TreeEntry>('POST', `${p(id)}/files`, req),
   updateFile: (id: string, fileId: string, req: UpdateFileRequest) => request<TreeEntry>('PATCH', `${p(id)}/files/${enc(fileId)}`, req),
   deleteFile: (id: string, fileId: string) => request<{ ok: true }>('DELETE', `${p(id)}/files/${enc(fileId)}`),
+
+  // trash
+  trash: (id: string) => request<TrashEntry[]>('GET', `${p(id)}/trash`),
+  restore: (id: string, fileId: string, req: RestoreRequest = {}) =>
+    request<RestoreResponse>('POST', `${p(id)}/trash/${enc(fileId)}/restore`, req),
+  purge: (id: string, fileId: string) => request<{ ok: true }>('DELETE', `${p(id)}/trash/${enc(fileId)}`),
+  emptyTrash: (id: string) => request<{ ok: true }>('DELETE', `${p(id)}/trash`),
+}
+
+/** Download URL of the project as a zip (the server sends it as an attachment). */
+export function exportZipUrl(projectId: string): string {
+  return `${p(projectId)}/export.zip`
 }
 
 /** URL of a file's raw bytes. `inline` only has an effect for png/jpg/gif/webp (never SVG). */
@@ -115,22 +123,18 @@ export function rawFileUrl(projectId: string, fileId: string, inline = false): s
   return `${p(projectId)}/files/${enc(fileId)}/raw${inline ? '?inline=1' : ''}`
 }
 
-export interface UploadHandle {
-  promise: Promise<UploadResponse>
+export interface UploadHandle<T> {
+  promise: Promise<T>
   abort(): void
 }
 
-/**
- * Upload one file as the raw request body (streamed by the browser, with Content-Length).
- * XHR rather than fetch because it reports upload progress.
- */
-export function uploadFile(projectId: string, parentId: string, file: Blob, name: string,
-  onProgress?: (loaded: number, total: number) => void): UploadHandle {
+/** POST a raw body with XHR (rather than fetch, because XHR reports upload progress). */
+function sendRaw<T>(url: string, body: Blob, contentType: string, onProgress?: (loaded: number, total: number) => void): UploadHandle<T> {
   const xhr = new XMLHttpRequest()
-  const promise = new Promise<UploadResponse>((resolve, reject) => {
-    xhr.open('POST', `${p(projectId)}/upload?parentId=${enc(parentId)}&name=${enc(name)}`)
+  const promise = new Promise<T>((resolve, reject) => {
+    xhr.open('POST', url)
     xhr.withCredentials = true
-    xhr.setRequestHeader('content-type', 'application/octet-stream')
+    xhr.setRequestHeader('content-type', contentType)
     xhr.upload.onprogress = ev => { if (ev.lengthComputable) onProgress?.(ev.loaded, ev.total) }
     xhr.onload = () => {
       let data: unknown = null
@@ -139,7 +143,7 @@ export function uploadFile(projectId: string, parentId: string, file: Blob, name
       } catch {
         // non-JSON error page
       }
-      if (xhr.status >= 200 && xhr.status < 300) resolve(data as UploadResponse)
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T)
       else {
         if (xhr.status === 401) onUnauthenticated()
         reject(toApiError(xhr.status, data))
@@ -147,12 +151,23 @@ export function uploadFile(projectId: string, parentId: string, file: Blob, name
     }
     xhr.onerror = () => reject(new TypeError('network error'))
     xhr.onabort = () => reject(new ApiError(0, 'aborted', 'Upload cancelled'))
-    xhr.send(file)
+    xhr.send(body)
   })
   return { promise, abort: () => xhr.abort() }
 }
 
-export function buildFileUrl(projectId: string, buildId: string, name: 'output.pdf' | 'output.log'): string {
+/** Upload one file as the raw request body (streamed by the browser, with Content-Length). */
+export function uploadFile(projectId: string, parentId: string, file: Blob, name: string,
+  onProgress?: (loaded: number, total: number) => void): UploadHandle<UploadResponse> {
+  return sendRaw(`${p(projectId)}/upload?parentId=${enc(parentId)}&name=${enc(name)}`, file, 'application/octet-stream', onProgress)
+}
+
+/** Import a zip as a new project owned by the caller. */
+export function importZip(name: string, zip: Blob, onProgress?: (loaded: number, total: number) => void): UploadHandle<ImportResponse> {
+  return sendRaw(`/api/projects/import?name=${enc(name)}`, zip, 'application/zip', onProgress)
+}
+
+export function buildFileUrl(projectId: string, buildId: string, name: OutputName): string {
   return `${p(projectId)}/builds/${enc(buildId)}/${name}`
 }
 
@@ -163,8 +178,8 @@ export async function fetchBuildLog(projectId: string, buildId: string): Promise
   return res.text()
 }
 
-/** Does this build have a PDF? (HEAD is treated like GET by the server's router.) */
-export async function buildHasPdf(projectId: string, buildId: string): Promise<boolean> {
-  const res = await fetch(buildFileUrl(projectId, buildId, 'output.pdf'), { method: 'HEAD', credentials: 'same-origin' })
+/** Does this build have that output file? (HEAD is treated like GET by the server's router.) */
+export async function buildHasOutput(projectId: string, buildId: string, name: OutputName): Promise<boolean> {
+  const res = await fetch(buildFileUrl(projectId, buildId, name), { method: 'HEAD', credentials: 'same-origin' })
   return res.ok
 }

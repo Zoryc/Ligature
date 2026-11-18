@@ -19,6 +19,8 @@ services:
       # 1 = rate limits use the first X-Forwarded-For hop. Only behind a proxy that overwrites that header
       # (Caddy does for untrusted clients); the app port is bound to 127.0.0.1 so nothing else can set it.
       TRUST_PROXY: ${LIGATURE_TRUST_PROXY:-0}
+      # Deleted files stay in the project's trash can this many days, then are purged automatically.
+      TRASH_RETENTION_DAYS: ${LIGATURE_TRASH_RETENTION_DAYS:-30}
       # The SPA (apps/web/dist) is served by the app itself: WEB_DIST_DIR is set in the image.
     ports:
       - "127.0.0.1:${LIGATURE_PORT:-3000}:3000"   # only the local reverse proxy talks to the app

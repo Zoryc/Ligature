@@ -21,6 +21,7 @@ export function parseMetaEvent(payload: string): MetaEvent | null {
     case 'project-changed':
     case 'members-changed':
     case 'project-deleted':
+    case 'trash-changed':
       return { type: e['type'] }
     case 'compile-finished': {
       const { buildId, status } = e
@@ -39,6 +40,8 @@ export type ProjectAction =
   | { type: 'refresh-project' }
   /** Drop a user's presence (their access was revoked). */
   | { type: 'drop-peer'; userId: string }
+  /** Refetch the trash listing (its count is shown under the file tree). */
+  | { type: 'refresh-trash' }
   /** Refetch the member list (only when the members panel is open). */
   | { type: 'refresh-members' }
   /** Hand the build event to BuildEvents. */
@@ -74,7 +77,7 @@ export const SESSION_ENDED = 'Your session ended (logged out elsewhere, or the p
  * from an outage. MetaEvents sent while we were away are lost, so refetch what they would have updated.
  */
 export function resyncActions(ctx: Pick<EventContext, 'membersOpen'>): ProjectAction[] {
-  return [{ type: 'refresh-project' }, ...(ctx.membersOpen ? [{ type: 'refresh-members' } as const] : [])]
+  return [{ type: 'refresh-project' }, { type: 'refresh-trash' }, ...(ctx.membersOpen ? [{ type: 'refresh-members' } as const] : [])]
 }
 
 export function metaEventActions(e: MetaEvent, ctx: EventContext): ProjectAction[] {
@@ -93,6 +96,8 @@ export function metaEventActions(e: MetaEvent, ctx: EventContext): ProjectAction
         : [{ type: 'drop-peer', userId: e.userId }, ...(ctx.membersOpen ? [{ type: 'refresh-members' } as const] : [])]
     case 'project-deleted':
       return [{ type: 'leave', notice: DELETED }]
+    case 'trash-changed':
+      return [{ type: 'refresh-trash' }]
   }
 }
 
@@ -114,7 +119,7 @@ export function isCloseReason(r: unknown): r is CloseReason {
 export function closeActions(reason: CloseReason, scope: DocScope): ProjectAction[] {
   if (scope === 'file') {
     // Neutral wording: the deletion may have come from this very tab.
-    if (reason === 'file-deleted') return [{ type: 'file-gone', notice: 'The open file was deleted.' }]
+    if (reason === 'file-deleted') return [{ type: 'file-gone', notice: 'The open file was moved to the trash.' }]
     // Re-authenticating picks up the new role (read-only or not); a no-op if access is gone (the meta doc handles that).
     return reason === 'role-changed' ? [{ type: 'file-reconnect' }] : []
   }

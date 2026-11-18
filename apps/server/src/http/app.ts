@@ -8,6 +8,9 @@ import { projectRoutes } from './routes/projects.ts'
 import { memberRoutes } from './routes/members.ts'
 import { inviteRoutes } from './routes/invites.ts'
 import { fileRoutes } from './routes/files.ts'
+import { trashRoutes } from './routes/trash.ts'
+import { zipRoutes } from './routes/zip.ts'
+import { synctexRoutes } from './routes/synctex.ts'
 import { serveSpa } from './static.ts'
 
 export interface AppDeps extends RouteDeps {
@@ -20,8 +23,12 @@ export interface AppDeps extends RouteDeps {
 const JSON_BODY_LIMIT = 2 * 1024 * 1024
 
 const UPLOAD_PATH = /^\/api\/projects\/[^/]+\/upload$/
-/** `POST /api/projects/:id/upload` and nothing else (not e.g. `PATCH …/files/upload`). */
-export const isUploadRoute = (method: string, path: string) => method === 'POST' && UPLOAD_PATH.test(path)
+/**
+ * `POST /api/projects/:id/upload` and `POST /api/projects/import` (raw bodies with their own limits and
+ * streaming readers) and nothing else (not e.g. `PATCH …/files/upload`).
+ */
+export const isUploadRoute = (method: string, path: string) =>
+  method === 'POST' && (UPLOAD_PATH.test(path) || path === '/api/projects/import')
 
 export function createApp(deps: AppDeps) {
   const app = new Hono<Env>()
@@ -61,6 +68,9 @@ export function createApp(deps: AppDeps) {
   app.route('/api', memberRoutes(deps))
   app.route('/api', inviteRoutes(deps))
   app.route('/api', fileRoutes(deps))
+  app.route('/api', trashRoutes(deps))
+  app.route('/api', zipRoutes(deps))
+  app.route('/api', synctexRoutes(deps))
 
   app.all('/api/*', c => c.json({ error: 'not-found' }, 404))
 

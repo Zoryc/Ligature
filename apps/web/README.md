@@ -22,6 +22,10 @@ Ports are configurable: `LIGATURE_API_PORT` (where the Vite proxy sends /api and
 Compiling needs the compiler worker on `http://127.0.0.1:7071` (see the repo docs). Without it, Recompile shows
 "Compiler unavailable" in the log panel.
 
+Keyboard: Ctrl/Cmd+S compiles (never the browser's save dialog); Ctrl+Alt+J shows the cursor's line in the PDF;
+double-click in the PDF opens the source at that line. Auto-compile (owners/editors) is a per-project toggle stored in
+`localStorage` under `ligature:auto-compile:<projectId>`, on by default.
+
 Use `localhost`, not `127.0.0.1`. The server checks the `Origin` header against `http://localhost:5173`.
 The Vite proxy forwards the browser's Origin as it is (`changeOrigin` is deliberately off).
 
@@ -32,7 +36,7 @@ The Vite proxy forwards the browser's Origin as it is (`changeOrigin` is deliber
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production build to `dist/` (static files) |
 | `npm run typecheck` | `svelte-check` (uses this package's own TypeScript 5.9, because svelte-check does not support TS 7 yet) |
-| `npm test` | Vitest unit tests for the pure helpers (log parsing, tree ops, routes, errors, events, "PDF is behind", colours) |
+| `npm test` | Vitest unit tests for the pure helpers (log parsing, tree ops, routes, errors, events, "PDF is behind", colours, trash display, diagnostic positions, auto-compile scheduler, PDF coordinates, zip import) |
 
 ## Layout
 
@@ -54,9 +58,17 @@ src/
   lib/behind.ts              "PDF is behind" (state vector + delete set comparison against the build)
   lib/buildEvents.ts         tells our own compile-finished broadcasts from collaborators' ones
   lib/Editor.svelte          CodeMirror 6 + y-codemirror.next (Y.UndoManager undo, stex highlighting, read-only for viewers)
-  lib/PdfView.svelte         pdf.js 6, lazy-loaded; only pages near the viewport have a canvas; keeps the scroll position
-  lib/LogPanel.svelte        build status + log; `file:line:` errors are clickable
-  lib/FileTree.svelte        tree + file actions (new, rename, move, delete, set main, download, upload, drag-and-drop)
+  lib/PdfView.svelte         pdf.js 6, lazy-loaded; only pages near the viewport have a canvas; keeps the scroll position;
+                             zoom; double-click = SyncTeX inverse search; showBoxes() = fading forward-search highlight
+  lib/LogPanel.svelte        build status, problems list (click: open the file at the line), raw log
+  lib/FileTree.svelte        tree + file actions (new, rename, move, move to trash, set main, download, upload, drag-and-drop),
+                             trash button with count; highlights a restored item
+  lib/TrashPanel.svelte      trash can: restore, restore to…, delete forever, empty trash (owner)
+  lib/trash.ts               trash sorting and display texts
+  lib/diagnostics.ts         build diagnostics anchored to the text, mapped through Y.Text changes until the next build
+  lib/autoCompile.ts         auto-compile scheduler (2.5 s after local edits, one at a time, back-off on 429/503) + per-project toggle
+  lib/pdfCoords.ts           PDF points <-> page pixels at any zoom (SyncTeX), zoom steps
+  lib/zipImport.ts           zip import name + report shown when the new project opens
 ```
 
 ## Deploying the build

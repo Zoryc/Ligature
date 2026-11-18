@@ -1,0 +1,23 @@
+\documentclass{article}
+\begin{document}
+\hsize=200pt
+Here is a paragraph with an unbreakable word (Supercalifragilisticexpialidociousandevenlongerthanthatwithoutanyhyphenationpoints that overflows.
+
+\hbox to 20pt{This box is far too wide)}
+
+\hbox to 300pt{spread}
+
+\begin{tabular}{p{1cm}}
+Averyveryverylongwordinsideatablecell \\
+\end{tabular}
+
+\vbox to 2pt{\hbox{a}\hbox{b}\hbox{c}}
+
+\vbox to 100pt{\hbox{a}}
+
+\halign to 20pt{#\tabskip=0pt\cr
+A row (that is much too wide for the alignment\cr
+}
+
+\noindent\rule{1pt}{1000pt}
+\end{document}

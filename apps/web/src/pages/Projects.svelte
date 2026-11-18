@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import type { ProjectSummary } from '@ligature/shared'
-  import { api } from '../lib/api.ts'
+  import { api, importZip, type UploadHandle } from '../lib/api.ts'
+  import type { ImportResponse } from '@ligature/shared'
+  import { defaultProjectName, MAX_IMPORT_BYTES, rememberImportReport } from '../lib/zipImport.ts'
   import { session } from '../lib/session.svelte.ts'
   import { go } from '../lib/router.svelte.ts'
   import { errorMessage } from '../lib/errors.ts'
@@ -13,6 +15,14 @@
   let error = $state<string | null>(null)
   let newName = $state('')
   let creating = $state(false)
+
+  // Import .zip
+  let zipInput = $state<HTMLInputElement | undefined>(undefined)
+  let zipFile = $state<File | null>(null)
+  let importName = $state('')
+  let importProgress = $state<{ loaded: number; total: number } | null>(null)
+  let importHandle = $state.raw<UploadHandle<ImportResponse> | null>(null)
+  let importError = $state<string | null>(null)
 
   async function load() {
     try {
@@ -39,6 +49,50 @@
     } finally {
       creating = false
     }
+  }
+
+  function pickZip(e: Event) {
+    const f = (e.currentTarget as HTMLInputElement).files?.[0] ?? null
+    importError = null
+    zipFile = f
+    if (f) importName = defaultProjectName(f.name)
+  }
+
+  function resetImport() {
+    zipFile = null
+    importName = ''
+    importProgress = null
+    importHandle = null
+    if (zipInput) zipInput.value = ''
+  }
+
+  async function startImport(e: Event) {
+    e.preventDefault()
+    const f = zipFile
+    const name = importName.trim()
+    if (!f || !name || importHandle) return
+    if (f.size > MAX_IMPORT_BYTES) {
+      importError = `The archive is larger than ${MAX_IMPORT_BYTES / 1048576} MB.`
+      return
+    }
+    importError = null
+    importProgress = { loaded: 0, total: f.size }
+    const h = importZip(name, f, (loaded, total) => { importProgress = { loaded, total } })
+    importHandle = h
+    try {
+      const r = await h.promise
+      rememberImportReport(r.project.id, r.report)
+      resetImport()
+      go(`/project/${encodeURIComponent(r.project.id)}`)
+    } catch (err) {
+      importError = `Could not import "${f.name}": ${errorMessage(err)}`
+      importProgress = null
+      importHandle = null
+    }
+  }
+
+  function cancelImport() {
+    importHandle?.abort()
   }
 
   async function remove(p: ProjectSummary) {
@@ -86,6 +140,31 @@
     </div>
   </form>
 
+  <details class="import">
+    <summary>Import .zip</summary>
+    <form class="form" onsubmit={startImport}>
+      <p class="hint">Creates a new project from a zip archive (up to {MAX_IMPORT_BYTES / 1048576} MB). Build files such as
+        .aux and .log are left out.</p>
+      <div class="row">
+        <input bind:this={zipInput} type="file" accept=".zip,application/zip" onchange={pickZip} aria-label="Zip file"
+          disabled={importHandle !== null} />
+      </div>
+      {#if zipFile}
+        <div class="row">
+          <input bind:value={importName} maxlength="120" aria-label="Project name" placeholder="Project name"
+            disabled={importHandle !== null} />
+          {#if importHandle}
+            <progress max={importProgress?.total || 1} value={importProgress?.loaded ?? 0}></progress>
+            <button type="button" onclick={cancelImport}>Cancel</button>
+          {:else}
+            <button type="submit" class="primary" disabled={!importName.trim()}>Import</button>
+          {/if}
+        </div>
+      {/if}
+      {#if importError}<p class="error">{importError}</p>{/if}
+    </form>
+  </details>
+
   {#if error}
     <p class="error">{error}</p>
   {:else if !projects}
@@ -115,3 +194,10 @@
     </table>
   {/if}
 </main>
+
+<style>
+  .import { margin: 12px 0 20px; }
+  .import summary { cursor: pointer; color: #2a5bd7; }
+  .import .form { margin-top: 8px; }
+  .import progress { width: 160px; }
+</style>

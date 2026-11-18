@@ -1,0 +1,61 @@
+[
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `knuth' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 4,
+    "raw": "Package natbib Warning: Citation `knuth' on page 1 undefined on input line 4."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `incomplete' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 4,
+    "raw": "Package natbib Warning: Citation `incomplete' on page 1 undefined on input line 4."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `missingkey' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "There were undefined citations.",
+    "path": "main.tex",
+    "raw": "Package natbib Warning: There were undefined citations."
+  },
+  {
+    "severity": "warning",
+    "kind": "bibtex",
+    "message": "string name \"undefinedmacro\" is undefined",
+    "path": "bib/refs.bib",
+    "line": 14,
+    "raw": "Warning--string name \"undefinedmacro\" is undefined\n--line 14 of file bib/refs.bib"
+  },
+  {
+    "severity": "warning",
+    "kind": "bibtex",
+    "message": "I didn't find a database entry for \"missingkey\"",
+    "raw": "Warning--I didn't find a database entry for \"missingkey\""
+  },
+  {
+    "severity": "warning",
+    "kind": "bibtex",
+    "message": "empty journal in incomplete",
+    "path": "bib/refs.bib",
+    "raw": "Warning--empty journal in incomplete"
+  },
+  {
+    "severity": "warning",
+    "kind": "package:natbib",
+    "message": "Citation(s) may have changed. Rerun to get citations correct.",
+    "path": "main.tex",
+    "raw": "Package natbib Warning: Citation(s) may have changed.\n(natbib)                Rerun to get citations correct."
+  }
+]

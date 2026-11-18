@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import type { TreeEntry } from '@ligature/shared'
   import { api, rawFileUrl, uploadFile } from './api.ts'
   import { treeRows, type TreeRow } from './tree.ts'
   import {
     entryPath, folderLabel, formatBytes, moveTargets, nameProblem, planUploads, targetFolder, type UploadPlanItem,
   } from './treeOps.ts'
+  import { ancestorIds, trashButtonLabel } from './trash.ts'
   import { confirmDialog, openDialog, promptDialog } from './dialogs.svelte.ts'
   import { errorMessage } from './errors.ts'
   import { toast } from './toasts.svelte.ts'
@@ -25,9 +27,34 @@
     /** After a change made here (the meta event also triggers a refresh; this one is immediate). */
     onChanged: () => void
     onSetMain: (fileId: string) => void
+    /** Number of entries in the trash (null while unknown). */
+    trashCount: number | null
+    trashOpen: boolean
+    onToggleTrash: () => void
+    /** An item to show and highlight for a moment (e.g. just restored from the trash). */
+    highlightId: string | null
   }
 
-  let { projectId, tree, rootId, mainFileId, canEdit, openId, onOpen, onChanged, onSetMain }: Props = $props()
+  let {
+    projectId, tree, rootId, mainFileId, canEdit, openId, onOpen, onChanged, onSetMain, trashCount, trashOpen, onToggleTrash,
+    highlightId,
+  }: Props = $props()
+  let listEl = $state<HTMLUListElement | undefined>(undefined)
+
+  // Make the highlighted item visible: expand it and its folders, select it and scroll to it.
+  $effect(() => {
+    const id = highlightId
+    if (!id || !tree.some(e => e.id === id)) return
+    // Its folders, and the item itself when it is a folder (its contents came back with it).
+    const up = [id, ...ancestorIds(tree, id)]
+    if (up.some(a => collapsed.has(a))) {
+      const next = new Set(collapsed)
+      for (const a of up) next.delete(a)
+      collapsed = next
+    }
+    selectedId = id
+    void tick().then(() => listEl?.querySelector('.flash')?.scrollIntoView({ block: 'nearest' }))
+  })
 
   let collapsed = $state(new Set<string>())
   let selectedId = $state<string | null>(null)
@@ -136,9 +163,10 @@
     const path = entryPath(tree, e.id) ?? e.name
     const inside = e.kind === 'folder' ? countInside(e.id) : 0
     const message = e.kind === 'folder'
-      ? `Delete the folder "${path}"${inside ? ` and the ${inside} item${inside === 1 ? '' : 's'} inside it` : ''}? Collaborators lose it too.`
-      : `Delete "${path}"? Collaborators lose it too.`
-    if (!(await confirmDialog('Delete', message, { confirmLabel: 'Delete', danger: true }))) return
+      ? `Move the folder "${path}"${inside ? ` and the ${inside} item${inside === 1 ? '' : 's'} inside it` : ''} to the trash? `
+        + 'Collaborators lose it too. It can be restored from the trash.'
+      : `Move "${path}" to the trash? Collaborators lose it too. It can be restored from the trash.`
+    if (!(await confirmDialog('Move to trash', message, { confirmLabel: 'Move to trash', danger: true }))) return
     await run(`Could not delete "${e.name}"`, () => api.deleteFile(projectId, e.id))
   }
 
@@ -275,17 +303,18 @@
         {/if}
         <button type="button" onclick={() => rename(selected!)}>Rename</button>
         <button type="button" onclick={() => move(selected!)}>Move</button>
-        <button type="button" class="del" onclick={() => remove(selected!)}>Delete</button>
+        <button type="button" class="del" title="Move to trash" onclick={() => remove(selected!)}>Delete</button>
       {/if}
     </div>
   {/if}
   {#if canEdit}<div class="target muted">New files go to <strong>{currentFolderLabel}</strong></div>{/if}
 
-  <ul class="tree">
+  <ul class="tree" bind:this={listEl}>
     {#each visible as r (r.entry.id)}
       <li style="padding-left: {4 + r.depth * 14}px" class:drop={inDropFolder(r)}
         ondragover={e => dragOver(e, r.entry.id)} ondrop={e => drop(e, r.entry.id)}>
         <button type="button" class="row {r.entry.kind}" class:selected={r.entry.id === selectedId} class:open={r.entry.id === openId}
+          class:flash={r.entry.id === highlightId}
           title={r.entry.kind === 'binary' ? `${r.path} (${formatBytes(r.entry.size ?? 0)})` : r.path}
           onclick={() => clickRow(r.entry)}>
           {#if r.entry.kind === 'folder'}
@@ -312,6 +341,13 @@
       {/each}
     </ul>
   {/if}
+
+  <div class="trash-bar">
+    <button type="button" class="trash-btn" class:active={trashOpen} onclick={onToggleTrash}
+      title="Deleted files and folders, which can be restored">
+      <span aria-hidden="true">🗑</span> {trashButtonLabel(trashCount ?? 0)}
+    </button>
+  </div>
 </div>
 
 <style>
@@ -379,4 +415,18 @@
   .uploads li { display: flex; gap: 6px; align-items: center; }
   .uploads .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .uploads progress { width: 80px; }
+  .flash { animation: tree-flash 3s ease-out; }
+  @keyframes tree-flash {
+    0%, 40% { background: #ffe58a; }
+    100% { background: transparent; }
+  }
+  .trash-bar {
+    position: sticky;
+    bottom: 0;
+    padding: 6px;
+    border-top: 1px solid #e4e4e4;
+    background: #fafafa;
+  }
+  .trash-btn { width: 100%; text-align: left; font-size: 13px; }
+  .trash-btn.active { background: #dde4ff; }
 </style>

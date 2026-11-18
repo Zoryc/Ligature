@@ -1,0 +1,95 @@
+[
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\hbox (8.28998pt too wide) in paragraph",
+    "path": "main.tex",
+    "line": 4,
+    "endLine": 5,
+    "raw": "Overfull \\hbox (8.28998pt too wide) in paragraph at lines 4--5\n\\TU/lmr/m/n/10 word (Su-per-cal-ifrag-ilis-tic-ex-pi-ali-do-ciou-sande-ven-\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\hbox (15.14996pt too wide) in paragraph",
+    "path": "main.tex",
+    "line": 4,
+    "endLine": 5,
+    "raw": "Overfull \\hbox (15.14996pt too wide) in paragraph at lines 4--5\n\\TU/lmr/m/n/10 longerthanthatwith-outany-hy-phen-ation-points that\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\hbox (83.2pt too wide)",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "Overfull \\hbox (83.2pt too wide) detected at line 6\n\\TU/lmr/m/n/10 This box is far too wide)\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Underfull \\hbox (badness 10000)",
+    "path": "main.tex",
+    "line": 8,
+    "raw": "Underfull \\hbox (badness 10000) detected at line 8\n\\TU/lmr/m/n/10 spread\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Underfull \\hbox (badness 10000) in paragraph",
+    "path": "main.tex",
+    "line": 11,
+    "endLine": 12,
+    "raw": "Underfull \\hbox (badness 10000) in paragraph at lines 11--12\n[]\\TU/lmr/m/n/10 Av-\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\hbox (25.79726pt too wide) in paragraph",
+    "path": "main.tex",
+    "line": 11,
+    "endLine": 12,
+    "raw": "Overfull \\hbox (25.79726pt too wide) in paragraph at lines 11--12\n\\TU/lmr/m/n/10 eryveryvery-\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\hbox (16.91725pt too wide) in paragraph",
+    "path": "main.tex",
+    "line": 11,
+    "endLine": 12,
+    "raw": "Overfull \\hbox (16.91725pt too wide) in paragraph at lines 11--12\n\\TU/lmr/m/n/10 wordinsid-\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\vbox (26.48pt too high)",
+    "path": "main.tex",
+    "line": 14,
+    "raw": "Overfull \\vbox (26.48pt too high) detected at line 14\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Underfull \\vbox (badness 10000)",
+    "path": "main.tex",
+    "line": 16,
+    "raw": "Underfull \\vbox (badness 10000) detected at line 16\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\hbox (188.71pt too wide) in alignment",
+    "path": "main.tex",
+    "line": 18,
+    "endLine": 20,
+    "raw": "Overfull \\hbox (188.71pt too wide) in alignment at lines 18--20\n[]\n []"
+  },
+  {
+    "severity": "info",
+    "kind": "badbox",
+    "message": "Overfull \\vbox (450.0pt too high) has occurred while \\output is active",
+    "path": "main.tex",
+    "raw": "Overfull \\vbox (450.0pt too high) has occurred while \\output is active []"
+  }
+]

@@ -1,0 +1,33 @@
+[
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Paragraph ended before \\short was complete.",
+    "path": "ch/sub.tex",
+    "line": 3,
+    "raw": "./ch/sub.tex:3: Paragraph ended before \\short was complete.\n<to be read again>\n                   \\par\nl.3"
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "Reference `subref' on page 1 undefined.",
+    "path": "ch/sub.tex",
+    "line": 4,
+    "raw": "LaTeX Warning: Reference `subref' on page 1 undefined on input line 4."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "Reference `mainref' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "LaTeX Warning: Reference `mainref' on page 1 undefined on input line 6."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "There were undefined references.",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: There were undefined references."
+  }
+]

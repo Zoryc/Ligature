@@ -1,0 +1,111 @@
+Initial Win CP for (console input, console output, system): (CP850, CP850, CP1252)
+I changed them all to CP1252
+Rc files read (in order):
+  NONE
+Latexmk: This is Latexmk, John Collins, 8 November 2026. Version 4.89.
+No existing .aux file, so I'll make a simple one, and require run of *latex.
+Latexmk: applying rule 'xelatex'...
+Rule 'xelatex':  Reasons for rerun
+Category 'other':
+  Rerun of 'xelatex' forced or previously required:
+    Reason or flag: 'Initial setup'
+
+------------
+Run number 1 of rule 'xelatex'
+------------
+------------
+Running 'xelatex -no-pdf -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+entering extended mode
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/xcolor/xcolor.sty (/usr/local/texlive/2026/texmf-dist/tex/latex/graphics-cfg/color.cfg)
+
+/usr/local/texlive/2026/texmf-dist/tex/latex/xcolor/xcolor.sty:265: LaTeX Error: Unknown option 'nosuchopt' for package xcolor.
+
+For immediate help type H <return>.
+ ->\tex_errmessage:D  LaTeX Error: Unknown option 'nosuchopt' for package xcolor.^^J^^JFor immediate help type H <return>\use_none:n                                                
+                                                                                                                                                                                    
+l.265 \ProcessKeyOptions\relax
+                              
+(/usr/local/texlive/2026/texmf-dist/tex/latex/graphics-def/xetex.def) (/usr/local/texlive/2026/texmf-dist/tex/latex/graphics/mathcolor.ltx)) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-xetex.def) (/srv/ligature builds/b1/out/output.aux)
+./main.tex:4: Undefined control sequence.
+l.4 Some text with an \undefinedmacro
+                                     {} in the middle.
+./main.tex:6: Undefined control sequence.
+<argument> Bold \alsoundefined 
+                               {} text
+l.6 \textbf{Bold \alsoundefined{} text}
+                                       
+./main.tex:8: Missing $ inserted.
+<inserted text> 
+                $
+l.8 A formula x^
+                2 outside math mode.
+./main.tex:9: Missing $ inserted.
+<inserted text> 
+                $
+l.9 
+    
+
+./main.tex:10: LaTeX Error: Environment nosuchenv undefined.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ->\errmessage  LaTeX Error: Environment nosuchenv undefined.^^J^^JSee the LaTeX manual or LaTeX Companion for explanation.^^JType  H <return>  for immediate help\@err@                                                                   
+                                                                                                                                                                                                                                           
+l.10 \begin{nosuchenv}
+                      
+
+./main.tex:12: LaTeX Error: \begin{document} ended by \end{nosuchenv}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...ine \space ended by \protect \end {\detokenize {nosuchenv}}.^^J^^JSee the LaTeX manual or LaTeX Companion for explanation.^^JType  H <return>  for immediate help\@err@                                                                   
+                                                                                                                                                                                                                                              
+l.12 \end{nosuchenv}
+                    
+
+./main.tex:14: Package xcolor Error: Undefined color `nosuchcolor'.
+
+See the xcolor package documentation for explanation.
+Type  H <return>  for immediate help.
+ ->\errmessage  Package xcolor Error: Undefined color `\@@nam '.^^J^^JSee the xcolor package documentation for explanation.^^JType  H <return>  for immediate help\@err@                                                                   
+                                                                                                                                                                                                                                           
+l.14 \textcolor{nosuchcolor}{coloured (text}
+                                            
+
+./main.tex:18: LaTeX Error: \begin{itemize} on input line 16 ended by \end{enumerate}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...ine \space ended by \protect \end {\detokenize {enumerate}}.^^J^^JSee the LaTeX manual or LaTeX Companion for explanation.^^JType  H <return>  for immediate help\@err@                                                                   
+                                                                                                                                                                                                                                              
+l.18 \end{enumerate}
+                    
+[1] (/srv/ligature builds/b1/out/output.aux) )
+(see the transcript file for additional information)
+Output written on /srv/ligature builds/b1/out/output.xdv (1 page, 1892 bytes).
+SyncTeX written on /srv/ligature builds/b1/out/output.synctex.gz.
+
+Transcript written on /srv/ligature builds/b1/out/output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Log file says output to '/srv/ligature builds/b1/out/output.xdv'
+Latexmk: Errors, so I did not complete making targets
+Collected error summary (may duplicate other messages):
+  xelatex: Command for 'xelatex' gave return code 1
+      Refer to '/srv/ligature builds/b1/out/output.log' and/or above output for details
+
+Latexmk: Sometimes, the -f option can be used to get latexmk
+  to try to force complete processing.
+  But normally, you will need to correct the file(s) that caused the
+  error, and then rerun latexmk.
+  In some cases, it is best to clean out generated files before rerunning
+  latexmk after you've corrected the files.
+Reverting Windows console CPs to (in,out) = (850,850)

@@ -1,0 +1,15 @@
+\documentclass[nosuchoption]{article}
+\usepackage{mystyle}
+\usepackage{hyperref}
+\begin{document}
+\section{Intro $x^2$}\label{sec:intro}
+See section~\ref{sec:missing} and \cite{nobody}.
+
+\label{dup}\label{dup}
+{\bfseries\scshape Bold small caps}
+
+\PackageWarning{mypkg}{First line of the warning\MessageBreak second line (with parens\MessageBreak third line}
+\ClassWarning{myclass}{A class warning}
+\PackageWarningNoLine{otherpkg}{No line here}
+\GenericWarning{}{Generic warning text}
+\end{document}

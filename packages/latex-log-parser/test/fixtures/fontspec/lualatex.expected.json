@@ -1,0 +1,88 @@
+[
+  {
+    "severity": "error",
+    "kind": "package:fontspec",
+    "message": "The font \"NoSuchFontAtAll\" cannot be found; this may be but usually is not a fontspec bug. Either there is a typo in the font name/file, the font is not installed (correctly), or there is a bug in the underlying font loading engine (XeTeX/luaotfload).",
+    "path": "main.tex",
+    "line": 4,
+    "raw": "./main.tex:4: Package fontspec Error:\n(fontspec)                The font \"NoSuchFontAtAll\" cannot be found; this\n(fontspec)                may be but usually is not a fontspec bug. Either\n(fontspec)                there is a typo in the font name/file, the font is\n(fontspec)                not installed (correctly), or there is a bug in\n(fontspec)                the underlying font loading engine\n(fontspec)                (XeTeX/luaotfload).\n\nFor immediate help type H <return>.\n ...correctly), or there is a bug in\n(fontspec)                the underlying font loading engine\n(fontspec)                (XeTeX/luaotfload).\n\nFor immediate help type H <return>\\use_none:n\n\nl.4 \\begin\n          {document}"
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Font \\TU/NoSuchFontAtAll(0)/m/n/10=name:NoSuchFontAtAll:mode=node;language=dflt;+tlig; at 10pt not loadable: metric data not found or bad.",
+    "path": "main.tex",
+    "line": 4,
+    "raw": "./main.tex:4: Font \\TU/NoSuchFontAtAll(0)/m/n/10=name:NoSuchFontAtAll:mode=node;language=dflt;+tlig; at 10pt not loadable: metric data not found or bad.\n<to be read again>\n                   relax\nl.4 \\begin\n          {document}"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no P (U+0050) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no P (U+0050) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no l (U+006C) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no l (U+006C) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no a (U+0061) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no a (U+0061) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no i (U+0069) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no i (U+0069) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no n (U+006E) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no n (U+006E) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no t (U+0074) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no t (U+0074) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no e (U+0065) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no e (U+0065) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no x (U+0078) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no x (U+0078) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no . (U+002E) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no . (U+002E) in font nullfont!"
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Missing character: There is no 1 (U+0031) in font nullfont!",
+    "path": "main.tex",
+    "raw": "Missing character: There is no 1 (U+0031) in font nullfont!"
+  }
+]

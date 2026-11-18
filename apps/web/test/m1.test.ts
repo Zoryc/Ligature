@@ -302,7 +302,7 @@ describe('project events', () => {
 
   it('uses neutral wording: the deletion or logout may have come from this very user', () => {
     // Deleting the folder of your own open file must not blame "a collaborator".
-    expect(closeActions('file-deleted', 'file')).toEqual([{ type: 'file-gone', notice: 'The open file was deleted.' }])
+    expect(closeActions('file-deleted', 'file')).toEqual([{ type: 'file-gone', notice: 'The open file was moved to the trash.' }])
     expect(closeActions('session-ended', 'meta')).toEqual([{ type: 'session-lost', notice: SESSION_ENDED }])
     expect(SESSION_ENDED).not.toMatch(/collaborator|another device/)
     for (const reason of ['file-deleted', 'session-ended'] as const) {
@@ -313,8 +313,8 @@ describe('project events', () => {
   })
 
   it('refetches the project (and open member list) after the meta doc resyncs, e.g. after an outage', () => {
-    expect(resyncActions({ membersOpen: false })).toEqual([{ type: 'refresh-project' }])
-    expect(resyncActions({ membersOpen: true })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-members' }])
+    expect(resyncActions({ membersOpen: false })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-trash' }])
+    expect(resyncActions({ membersOpen: true })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-trash' }, { type: 'refresh-members' }])
   })
 
   it('maps authentication failures', () => {

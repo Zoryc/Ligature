@@ -30,6 +30,7 @@ Settings (`docker/.env`, see `.env.example`):
 
 - `LIGATURE_ORIGIN` (required): the public origin; requests and WebSockets from any other origin are refused.
 - `LIGATURE_TRUST_PROXY=1` behind Caddy, so login rate limits see client IPs instead of the proxy's.
+- `LIGATURE_TRASH_RETENTION_DAYS` (default 30): deleted files stay in the trash can this long, then are purged.
 - `LIGATURE_TEXLIVE_IMAGE`: the compiler's TeX Live base. Default: full scheme (`texlive/texlive:latest-full`,
   pinned by digest, about 2.8 GB compressed). For a small VPS the medium scheme (about 0.9 GB) is in
   `.env.example`. Island of TeX publishes the current release only as `latest-*` (rebuilt weekly); update the

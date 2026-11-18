@@ -1,0 +1,89 @@
+[
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Undefined control sequence \\undefinedindeep",
+    "path": "chapters/sections/deep.tex",
+    "line": 6,
+    "raw": "./chapters/sections/deep.tex:6: Undefined control sequence.\nl.6 \\undefinedindeep"
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Undefined control sequence \\undefinedinintro",
+    "path": "chapters/intro.tex",
+    "line": 6,
+    "raw": "./chapters/intro.tex:6: Undefined control sequence.\nl.6 After deep: \\undefinedinintro"
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Undefined control sequence \\undefinedinmain",
+    "path": "main.tex",
+    "line": 7,
+    "raw": "./main.tex:7: Undefined control sequence.\nl.7 Back in main \\undefinedinmain\n                                 ."
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Undefined control sequence \\undefinedinincluded",
+    "path": "chapters/included.tex",
+    "line": 3,
+    "raw": "./chapters/included.tex:3: Undefined control sequence.\nl.3 \\undefinedinincluded"
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "Reference `nowhere' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 3,
+    "raw": "LaTeX Warning: Reference `nowhere' on page 1 undefined on input line 3."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "Reference `intro:missing' on page 1 undefined.",
+    "path": "chapters/intro.tex",
+    "line": 2,
+    "raw": "LaTeX Warning: Reference `intro:missing' on page 1 undefined on input line 2."
+  },
+  {
+    "severity": "warning",
+    "kind": "package:deeppkg",
+    "message": "Raised in the deep file.",
+    "path": "chapters/sections/deep.tex",
+    "line": 4,
+    "raw": "Package deeppkg Warning: Raised in the deep file on input line 4."
+  },
+  {
+    "severity": "warning",
+    "kind": "package:spacepkg",
+    "message": "Raised in the file with a space.",
+    "path": "chapters/my intro.tex",
+    "line": 3,
+    "raw": "Package spacepkg Warning: Raised in the file with a space on input line 3."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `nocite' on page 2 undefined.",
+    "path": "chapters/included.tex",
+    "line": 2,
+    "raw": "LaTeX Warning: Citation `nocite' on page 2 undefined on input line 2."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "Reference `alsonowhere' on page 3 undefined.",
+    "path": "main.tex",
+    "line": 13,
+    "raw": "LaTeX Warning: Reference `alsonowhere' on page 3 undefined on input line 13."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "There were undefined references.",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: There were undefined references."
+  }
+]

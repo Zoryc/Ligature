@@ -1,0 +1,108 @@
+[
+  {
+    "severity": "warning",
+    "kind": "package:mystyle",
+    "message": "Loaded from the project.",
+    "path": "mystyle.sty",
+    "line": 3,
+    "raw": "Package mystyle Warning: Loaded from the project on input line 3."
+  },
+  {
+    "severity": "warning",
+    "kind": "latex",
+    "message": "Unused global option(s): [nosuchoption].",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: Unused global option(s):\n    [nosuchoption]."
+  },
+  {
+    "severity": "warning",
+    "kind": "latex",
+    "message": "Label `dup' multiply defined.",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: Label `dup' multiply defined."
+  },
+  {
+    "severity": "warning",
+    "kind": "package:hyperref",
+    "message": "Token not allowed in a PDF string (Unicode): removing `math shift'.",
+    "path": "main.tex",
+    "line": 5,
+    "raw": "Package hyperref Warning: Token not allowed in a PDF string (Unicode):\n(hyperref)                removing `math shift' on input line 5."
+  },
+  {
+    "severity": "warning",
+    "kind": "package:hyperref",
+    "message": "Token not allowed in a PDF string (Unicode): removing `superscript'.",
+    "path": "main.tex",
+    "line": 5,
+    "raw": "Package hyperref Warning: Token not allowed in a PDF string (Unicode):\n(hyperref)                removing `superscript' on input line 5."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "Reference `sec:missing' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "LaTeX Warning: Reference `sec:missing' on page 1 undefined on input line 6."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-citation",
+    "message": "Citation `nobody' on page 1 undefined.",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "LaTeX Warning: Citation `nobody' on page 1 undefined on input line 6."
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Font shape `TU/lmr/bx/sc' undefined using `TU/lmr/bx/n' instead.",
+    "path": "main.tex",
+    "line": 9,
+    "raw": "LaTeX Font Warning: Font shape `TU/lmr/bx/sc' undefined\n(Font)              using `TU/lmr/bx/n' instead on input line 9."
+  },
+  {
+    "severity": "warning",
+    "kind": "package:mypkg",
+    "message": "First line of the warning second line (with parens third line.",
+    "path": "main.tex",
+    "line": 11,
+    "raw": "Package mypkg Warning: First line of the warning\n(mypkg)                second line (with parens\n(mypkg)                third line on input line 11."
+  },
+  {
+    "severity": "warning",
+    "kind": "class:myclass",
+    "message": "A class warning.",
+    "path": "main.tex",
+    "line": 12,
+    "raw": "Class myclass Warning: A class warning on input line 12."
+  },
+  {
+    "severity": "warning",
+    "kind": "package:otherpkg",
+    "message": "No line here.",
+    "path": "main.tex",
+    "raw": "Package otherpkg Warning: No line here."
+  },
+  {
+    "severity": "warning",
+    "kind": "font",
+    "message": "Some font shapes were not available, defaults substituted.",
+    "path": "main.tex",
+    "raw": "LaTeX Font Warning: Some font shapes were not available, defaults substituted."
+  },
+  {
+    "severity": "warning",
+    "kind": "undefined-reference",
+    "message": "There were undefined references.",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: There were undefined references."
+  },
+  {
+    "severity": "warning",
+    "kind": "latex",
+    "message": "There were multiply-defined labels.",
+    "path": "main.tex",
+    "raw": "LaTeX Warning: There were multiply-defined labels."
+  }
+]

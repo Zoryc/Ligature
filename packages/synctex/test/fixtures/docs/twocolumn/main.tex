@@ -1,0 +1,71 @@
+\documentclass[twocolumn]{article}
+\newcommand{\filler}{Filler text expands from a macro, so every use of the macro is attributed to the line where it is used, not where it is defined. This makes one source line produce several lines of output in a column.}
+\begin{document}
+\section{Two Columns}
+Two-column layout puts lines of text side by side,
+so a point in the right column must never be attributed to the left column.
+Each source line here is a sentence of moderate length.
+The paragraphs are long enough to fill both columns of the first page
+and to continue on a second page.
+
+Typesetting systems break paragraphs into lines by minimising a measure of badness
+over the whole paragraph rather than line by line.
+The result is that a change near the end of a paragraph may move words near its beginning.
+Synchronisation therefore records, for every line of output, the source line that produced each word.
+
+\filler
+
+\section{Boxes and Glue}
+Every line of output is a horizontal box.
+Between the words there is glue that can stretch or shrink.
+Kerns adjust the space between particular letter pairs, as in AV or To.
+Mathematics such as $x_1 + x_2 = y$ adds math nodes around the formula.
+Vertical boxes stack the lines of a paragraph and the paragraphs of a page.
+
+\filler
+\filler
+
+\section{Columns}
+The left column is filled first; when it is full, the output routine starts the right column.
+After both columns are full, the page is shipped out and a new page begins.
+Footnotes and floats complicate this picture,
+but this document keeps to plain paragraphs and section headings.
+
+A paragraph in the middle of the text with a short line.
+
+Another paragraph that talks about nothing in particular, but it does so at some length,
+in order to occupy enough space that the column break falls somewhere inside a paragraph
+rather than neatly between two of them, which is the more interesting case to test.
+The words continue for a while longer.
+They keep going until the column is very likely to have been broken in the middle of this paragraph.
+
+\section{More Text}
+\filler
+
+Short.
+
+Medium sized paragraph with a handful of words in it, written on one line.
+
+\filler
+\filler
+\filler
+
+\section{Second Page}
+\filler
+\filler \filler
+
+\filler
+\filler
+
+A paragraph between the fillers, with words of its own.
+It is two source lines long.
+
+\filler
+\filler
+\filler
+\filler
+
+\section{End}
+The last section of the two-column document.
+It ends here.
+\end{document}

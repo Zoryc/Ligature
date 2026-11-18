@@ -1,0 +1,224 @@
+Initial Win CP for (console input, console output, system): (CP850, CP850, CP1252)
+I changed them all to CP1252
+Rc files read (in order):
+  NONE
+Latexmk: This is Latexmk, John Collins, 8 November 2026. Version 4.89.
+No existing .aux file, so I'll make a simple one, and require run of *latex.
+Latexmk: applying rule 'xelatex'...
+Rule 'xelatex':  Reasons for rerun
+Category 'other':
+  Rerun of 'xelatex' forced or previously required:
+    Reason or flag: 'Initial setup'
+
+------------
+Run number 1 of rule 'xelatex'
+------------
+------------
+Running 'xelatex -no-pdf -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+entering extended mode
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/natbib/natbib.sty) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-xetex.def) (/srv/ligature builds/b1/out/output.aux)
+
+Package natbib Warning: Citation `knuth' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `incomplete' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6.
+
+No file output.bbl.
+
+Package natbib Warning: There were undefined citations.
+
+[1] (/srv/ligature builds/b1/out/output.aux) )
+Output written on /srv/ligature builds/b1/out/output.xdv (1 page, 1024 bytes).
+SyncTeX written on /srv/ligature builds/b1/out/output.synctex.gz.
+
+Transcript written on /srv/ligature builds/b1/out/output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Log file says output to '/srv/ligature builds/b1/out/output.xdv'
+  ===Source file '/srv/ligature builds/b1/out/output.bbl' for 'xelatex'
+Latexmk: Creating rule bibtex /srv/ligature builds/b1/out/output
+Latexmk: Found bibliography file(s):
+  ./bib/refs.bib
+Latexmk: applying rule 'bibtex /srv/ligature builds/b1/out/output'...
+Rule 'bibtex /srv/ligature builds/b1/out/output':  Reasons for rerun
+Category 'other':
+  Rerun of 'bibtex /srv/ligature builds/b1/out/output' forced or previously required:
+    Reason or flag: 'Initial set up of rule'
+
+------------
+Run number 1 of rule 'bibtex /srv/ligature builds/b1/out/output'
+------------
+Latexmk: Change directory to '/srv/ligature builds/b1/out/'.
+To assist finding of files in document directory, I set
+  BIBINPUTS='/srv/ligature builds/b1/src;/srv/ligature builds/b1/out;'
+  BSTINPUTS='/srv/ligature builds/b1/src;'.
+------------
+Running 'bibtex  "output.aux"'
+------------
+This is BibTeX, Version 0.99e (TeX Live 2026)
+The top-level auxiliary file: output.aux
+The style file: plainnat.bst
+Database file #1: bib/refs.bib
+Warning--string name "undefinedmacro" is undefined
+--line 14 of file bib/refs.bib
+Warning--I didn't find a database entry for "missingkey"
+Warning--empty journal in incomplete
+(There were 3 warnings)
+Latexmk: Change directory back to '/srv/ligature builds/b1/src'
+Latexmk: applying rule 'xelatex'...
+Rule 'xelatex':  Reasons for rerun
+Changed files or newly in use/created:
+  /srv/ligature builds/b1/out/output.aux
+  /srv/ligature builds/b1/out/output.bbl
+
+------------
+Run number 2 of rule 'xelatex'
+------------
+------------
+Running 'xelatex -no-pdf -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+entering extended mode
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/natbib/natbib.sty) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-xetex.def) (/srv/ligature builds/b1/out/output.aux)
+
+Package natbib Warning: Citation `knuth' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `incomplete' on page 1 undefined on input line 4.
+
+
+Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6.
+
+(/srv/ligature builds/b1/out/output.bbl)
+
+Package natbib Warning: There were undefined citations.
+
+[1] (/srv/ligature builds/b1/out/output.aux
+
+Package natbib Warning: Citation(s) may have changed.
+(natbib)                Rerun to get citations correct.
+
+) )
+Output written on /srv/ligature builds/b1/out/output.xdv (1 page, 2636 bytes).
+SyncTeX written on /srv/ligature builds/b1/out/output.synctex.gz.
+
+Transcript written on /srv/ligature builds/b1/out/output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Found input bbl file '/srv/ligature builds/b1/out/output.bbl'
+Latexmk: References changed.
+Latexmk: Log file says output to '/srv/ligature builds/b1/out/output.xdv'
+  ===Source file '/srv/ligature builds/b1/out/output.bbl' for 'xelatex'
+Latexmk: Found bibliography file(s):
+  ./bib/refs.bib
+Latexmk: applying rule 'bibtex /srv/ligature builds/b1/out/output'...
+Rule 'bibtex /srv/ligature builds/b1/out/output':  Reasons for rerun
+Changed files or newly in use/created:
+  /srv/ligature builds/b1/out/output.aux
+
+------------
+Run number 2 of rule 'bibtex /srv/ligature builds/b1/out/output'
+------------
+Latexmk: Change directory to '/srv/ligature builds/b1/out/'.
+To assist finding of files in document directory, I set
+  BIBINPUTS='/srv/ligature builds/b1/src;/srv/ligature builds/b1/out;'
+  BSTINPUTS='/srv/ligature builds/b1/src;'.
+------------
+Running 'bibtex  "output.aux"'
+------------
+This is BibTeX, Version 0.99e (TeX Live 2026)
+The top-level auxiliary file: output.aux
+The style file: plainnat.bst
+Database file #1: bib/refs.bib
+Warning--string name "undefinedmacro" is undefined
+--line 14 of file bib/refs.bib
+Warning--I didn't find a database entry for "missingkey"
+Warning--empty journal in incomplete
+(There were 3 warnings)
+Latexmk: Change directory back to '/srv/ligature builds/b1/src'
+Latexmk: applying rule 'xelatex'...
+Rule 'xelatex':  Reasons for rerun
+Changed files or newly in use/created:
+  /srv/ligature builds/b1/out/output.aux
+
+------------
+Run number 3 of rule 'xelatex'
+------------
+------------
+Running 'xelatex -no-pdf -interaction=nonstopmode -file-line-error -synctex=1 -recorder --jobname="output" -output-directory="/srv/ligature builds/b1/out"  "main.tex"'
+------------
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex)
+entering extended mode
+(./main.tex
+LaTeX2e <2026-11-01>
+L3 programming layer <2026-09-09>
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2026-06-04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2026/texmf-dist/tex/latex/base/size10.clo)) (/usr/local/texlive/2026/texmf-dist/tex/latex/natbib/natbib.sty) (/usr/local/texlive/2026/texmf-dist/tex/latex/l3kernel/l3backend-xetex.def) (/srv/ligature builds/b1/out/output.aux)
+
+Package natbib Warning: Citation `missingkey' on page 1 undefined on input line 6.
+
+(/srv/ligature builds/b1/out/output.bbl)
+
+Package natbib Warning: There were undefined citations.
+
+[1] (/srv/ligature builds/b1/out/output.aux) )
+Output written on /srv/ligature builds/b1/out/output.xdv (1 page, 2844 bytes).
+SyncTeX written on /srv/ligature builds/b1/out/output.synctex.gz.
+
+Transcript written on /srv/ligature builds/b1/out/output.log.
+Latexmk: Getting log file '/srv/ligature builds/b1/out/output.log'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.fls'
+Latexmk: Examining '/srv/ligature builds/b1/out/output.log'
+Latexmk: Found input bbl file '/srv/ligature builds/b1/out/output.bbl'
+Latexmk: Log file says output to '/srv/ligature builds/b1/out/output.xdv'
+  ===Source file '/srv/ligature builds/b1/out/output.bbl' for 'xelatex'
+Latexmk: Found bibliography file(s):
+  ./bib/refs.bib
+Latexmk: applying rule 'xdvipdfmx'...
+Rule 'xdvipdfmx':  Reasons for rerun
+Changed files or newly in use/created:
+  /srv/ligature builds/b1/out/output.xdv
+Category 'changed_source_rules':
+  xelatex
+Category 'no_dest':
+  xdvipdfmx
+
+------------
+Run number 1 of rule 'xdvipdfmx'
+------------
+------------
+Running 'xdvipdfmx -E -o "/srv/ligature builds/b1/out/output.pdf"  "/srv/ligature builds/b1/out/output.xdv"'
+------------
+Latexmk: Summary of warnings from last run of *latex:
+  Latex failed to resolve 1 citation(s)
+Latexmk: All targets (/srv/ligature builds/b1/out/output.xdv /srv/ligature builds/b1/out/output.pdf) are up-to-date
+
+Latexmk: Missing bbl file '/srv/ligature builds/b1/out/output.bbl' in following:
+ No file output.bbl.
+Latexmk: Using bibtex to make bibliography file(s).
+Latexmk: Using bibtex to make bibliography file(s).
+Latexmk: Using bibtex to make bibliography file(s).
+/srv/ligature builds/b1/out/output.xdv -> /srv/ligature builds/b1/out/output.pdf
+[1]
+11758 bytes written
+Latexmk: ====Problematic refs and citations with line #s in .tex file:
+  Citation `missingkey' on page 1 undefined on input line 6
+Reverting Windows console CPs to (in,out) = (850,850)

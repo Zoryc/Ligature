@@ -1,0 +1,16 @@
+[
+  {
+    "severity": "error",
+    "kind": "package:fontspec",
+    "message": "The fontspec package requires either XeTeX or LuaTeX. You must change your typesetting engine to, e.g., \"xelatex\" or \"lualatex\" instead of \"latex\" or \"pdflatex\".",
+    "path": "main.tex",
+    "raw": "/usr/local/texlive/2026/texmf-dist/tex/latex/fontspec/fontspec.sty:100: Fatal Package fontspec Error: The fontspec package requires either XeTeX or\n(fontspec)                      LuaTeX.\n(fontspec)\n(fontspec)                      You must change your typesetting engine to,\n(fontspec)                      e.g., \"xelatex\" or \"lualatex\" instead of\n(fontspec)                      \"latex\" or \"pdflatex\".\n\nType <return> to continue.\n ...pesetting engine to,\n(fontspec)                      e.g., \"xelatex\" or \"lualatex\" instead of\n(fontspec)                      \"latex\" or \"pdflatex\".\n\nType <return> to continue\\use_none:n\n\nl.100 \\msg_fatal:nn {fontspec} {cannot-use-pdftex}"
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Emergency stop (cannot \\read from terminal in nonstop modes)",
+    "path": "main.tex",
+    "raw": "/usr/local/texlive/2026/texmf-dist/tex/latex/fontspec/fontspec.sty:100: Emergency stop.\n<read *>\n\nl.100 \\msg_fatal:nn {fontspec} {cannot-use-pdftex}\n\n*** (cannot \\read from terminal in nonstop modes)"
+  }
+]

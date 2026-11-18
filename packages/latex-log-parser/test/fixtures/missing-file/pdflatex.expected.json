@@ -1,0 +1,17 @@
+[
+  {
+    "severity": "error",
+    "kind": "missing-file",
+    "message": "File `doesnotexist.sty' not found.",
+    "path": "main.tex",
+    "raw": "! LaTeX Error: File `doesnotexist.sty' not found."
+  },
+  {
+    "severity": "error",
+    "kind": "tex",
+    "message": "Emergency stop (cannot \\read from terminal in nonstop modes)",
+    "path": "main.tex",
+    "line": 4,
+    "raw": "./main.tex:4: Emergency stop.\n<read *>\n\nl.4 \\begin\n          {document}^^M\n*** (cannot \\read from terminal in nonstop modes)"
+  }
+]

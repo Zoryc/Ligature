@@ -72,6 +72,26 @@ export interface RateLimitConfig {
   /** upload bodies buffered at once, per process and per user (the rest wait for a slot) */
   uploadConcurrency: number
   uploadConcurrencyPerUser: number
+  /** compile requests per user per `compileWindowMs` (docs/M2.md §4) */
+  compilePerUser: number
+  compileWindowMs: number
+  /** zip imports processed at once, per process and per user (archive in memory, extraction, writes) */
+  importConcurrency: number
+  importConcurrencyPerUser: number
+  /** zip import bodies being received at once, per process and per user (before processing) */
+  importBodyConcurrency: number
+  importBodyConcurrencyPerUser: number
+  /** an import body must arrive within `importBodyGraceMs` + its length at `importBodyMinBytesPerSec` (else 408) */
+  importBodyGraceMs: number
+  importBodyMinBytesPerSec: number
+  /** zip exports streaming at once, per process and per user (the rest wait for a slot) */
+  exportConcurrency: number
+  exportConcurrencyPerUser: number
+  /** an export whose client reads nothing for this long is aborted */
+  exportIdleMs: number
+  /** SyncTeX files parsed (cache misses) per user per `synctexWindowMs` (docs/M2.md §3) */
+  synctexParsesPerUser: number
+  synctexWindowMs: number
 }
 
 export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
@@ -83,6 +103,19 @@ export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
   uploadWindowMs: 60 * 60 * 1000,
   uploadConcurrency: 8,
   uploadConcurrencyPerUser: 3,
+  compilePerUser: 30,
+  compileWindowMs: 5 * 60 * 1000,
+  importConcurrency: 2,
+  importConcurrencyPerUser: 1,
+  importBodyConcurrency: 4,
+  importBodyConcurrencyPerUser: 1,
+  importBodyGraceMs: 60 * 1000,
+  importBodyMinBytesPerSec: 128 * 1024,
+  exportConcurrency: 4,
+  exportConcurrencyPerUser: 1,
+  exportIdleMs: 60 * 1000,
+  synctexParsesPerUser: 60,
+  synctexWindowMs: 5 * 60 * 1000,
 }
 
 export function createLimiters(cfg: RateLimitConfig) {
@@ -93,6 +126,13 @@ export function createLimiters(cfg: RateLimitConfig) {
     invitePreview: new RateLimiter(cfg.signupPerIp, cfg.windowMs),
     uploadBytes: new RateLimiter(cfg.uploadBytesPerUser, cfg.uploadWindowMs),
     uploadGate: new UploadGate(cfg.uploadConcurrency, cfg.uploadConcurrencyPerUser),
+    compile: new RateLimiter(cfg.compilePerUser, cfg.compileWindowMs),
+    importGate: new UploadGate(cfg.importConcurrency, cfg.importConcurrencyPerUser),
+    importBodyGate: new UploadGate(cfg.importBodyConcurrency, cfg.importBodyConcurrencyPerUser),
+    importBodyDeadline: { graceMs: cfg.importBodyGraceMs, minBytesPerSec: cfg.importBodyMinBytesPerSec },
+    exportGate: new UploadGate(cfg.exportConcurrency, cfg.exportConcurrencyPerUser),
+    exportIdleMs: cfg.exportIdleMs,
+    synctexParse: new RateLimiter(cfg.synctexParsesPerUser, cfg.synctexWindowMs),
   }
 }
 export type Limiters = ReturnType<typeof createLimiters>
