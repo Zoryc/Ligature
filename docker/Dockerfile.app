@@ -16,8 +16,12 @@ COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/compiler/package.json apps/compiler/package.json
 COPY packages/shared/package.json packages/shared/package.json
-# better-sqlite3 / @node-rs/argon2 ship prebuilt binaries for linux-x64/arm64 glibc; no compiler toolchain needed.
-RUN npm ci --no-audit --no-fund
+# better-sqlite3 (prebuilds/<platform>.node) and @node-rs/argon2 / esbuild (per-platform optional packages)
+# ship prebuilt binaries, so no compiler toolchain is needed. --ignore-scripts matters: without it npm runs
+# its implicit `node-gyp rebuild` for better-sqlite3 (it has a binding.gyp), which needs python/make/g++.
+RUN npm ci --no-audit --no-fund --ignore-scripts \
+ && node -e "new (require('better-sqlite3'))(':memory:').prepare('select 1').get()" \
+ && node -e "require('@node-rs/argon2')"
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/server apps/server

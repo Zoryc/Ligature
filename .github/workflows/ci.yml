@@ -38,10 +38,21 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Usually ~1 min. Mirrors occasionally stall, so each attempt is capped and retried instead of
+      # letting a hung download eat the whole job timeout.
       - name: Install TeX Live (apt)
+        timeout-minutes: 25
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends $TEX_PACKAGES
+          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for attempt in 1 2 3; do
+            if sudo timeout 420 apt-get $apt_opts update -q &&
+               sudo timeout 420 apt-get $apt_opts install -y -q --no-install-recommends $TEX_PACKAGES; then
+              break
+            fi
+            [ "$attempt" = 3 ] && { echo "::error::apt install of TeX Live failed 3 times"; exit 1; }
+            echo "::warning::apt attempt $attempt failed or stalled; retrying"
+            sleep 15
+          done
           latexmk -v | sed -n 2p
 
       # Each project has its own TEXMFVAR, so without a system-wide font cache every lualatex project
