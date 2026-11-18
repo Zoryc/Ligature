@@ -7,7 +7,13 @@ import { MAX_DIAGNOSTICS, parseLatexLog, type ParsedDiagnostic } from '../src/in
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const TWO_MB = 2 * 1024 * 1024
-const BUDGET_MS = 200
+/**
+ * These budgets catch super-linear behaviour (a regex that backtracks, a quadratic file stack), not slow
+ * machines: shared CI runners are ~2-3x slower than a desktop, so the budgets scale there.
+ */
+const SLOWDOWN = process.env.CI ? 3 : 1
+const BUDGET_MS = 200 * SLOWDOWN
+const LINEAR_BUDGET_MS = 1000 * SLOWDOWN
 
 const realLogs: string[] = readdirSync(FIXTURES)
   .filter(n => statSync(join(FIXTURES, n)).isDirectory())
@@ -176,16 +182,16 @@ describe('huge logs parse quickly', () => {
 
   // Not a log TeX can write (it stops after 100 errors in one paragraph, and every error has context lines),
   // so it gets a looser budget: the point is that it stays linear.
-  it('the densest possible error flood (half a million one-line errors) stays linear: < 1000 ms', () => {
+  it(`the densest possible error flood (half a million one-line errors) stays linear: < ${LINEAR_BUDGET_MS} ms`, () => {
     const { ms, out } = timed(repeatTo('! x\n', TWO_MB))
     checkShape(out)
-    expect(ms).toBeLessThan(1000)
+    expect(ms).toBeLessThan(LINEAR_BUDGET_MS)
   })
 
-  it('a file:line error on every line (no context, not a log TeX can write) stays linear: < 1000 ms', () => {
+  it(`a file:line error on every line (no context, not a log TeX can write) stays linear: < ${LINEAR_BUDGET_MS} ms`, () => {
     const { ms, out } = timed(repeatTo('./a.tex:1: z\n', TWO_MB))
     checkShape(out)
     expect(out).toEqual([expect.objectContaining({ kind: 'tex', message: 'z', path: 'a.tex', line: 1 })])
-    expect(ms).toBeLessThan(1000)
+    expect(ms).toBeLessThan(LINEAR_BUDGET_MS)
   })
 })
