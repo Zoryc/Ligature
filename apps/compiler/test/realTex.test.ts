@@ -68,6 +68,15 @@ describe.skipIf(!hasLatexmk)('real latexmk', () => {
     expect(existsSync(join(t.buildsDir, id, 'out', 'output.ind'))).toBe(true)
   }, 180_000)
 
+  it('log lines are not wrapped at 79 characters (file names and file:line errors stay parseable)', async () => {
+    const long = 'x'.repeat(150)
+    const r = await compile(t.base, randomUUID(), {
+      'main.tex': `\\documentclass{article}\n\\typeout{LONGLINE-${long}}\n\\begin{document}\nx\n\\end{document}\n`,
+    }, { timeoutMs: 120_000 })
+    expect(r.json.status).toBe('success')
+    expect(r.json.log).toContain(`LONGLINE-${long}`)
+  }, 180_000)
+
   it('a log full of 8-bit characters stays within the cap', async () => {
     const r = await compile(t.base, randomUUID(), {
       'main.tex': '\\documentclass{article}\n\\begin{document}\n\\count255=0\n' +

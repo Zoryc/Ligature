@@ -15,3 +15,8 @@ openout_any = p
 
 % No per-user tree: packages come from TeX Live only (the worker also points TEXMFHOME at /nonexistent).
 TEXMFHOME = /nonexistent
+
+% Unwrapped log lines (default 79), so file:line errors and file names can be parsed.
+max_print_line = 10000
+error_line = 254
+half_error_line = 238

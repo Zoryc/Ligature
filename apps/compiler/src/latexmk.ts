@@ -35,6 +35,11 @@ export function texEnv(base: NodeJS.ProcessEnv, l: Layout): Record<string, strin
     openin_any: 'p',
     openout_any: 'p',
     shell_escape: 'f',
+    // Don't wrap log lines at 79 characters (TeX Live's default): wrapped file names and `file:line:` errors
+    // can't be parsed or matched (e.g. an `out/output.bbl` path split across two lines).
+    max_print_line: '10000',
+    error_line: '254',
+    half_error_line: '238',
   })
   if (WIN) { env.TEMP = l.tmp; env.TMP = l.tmp }
   return env
