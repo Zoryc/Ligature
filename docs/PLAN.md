@@ -196,9 +196,9 @@ A `commenter` role comes later, together with comments.
 - argon2id, rate limiting per IP and per account, minimum length 10.
 - Password reset works by email if SMTP is configured; otherwise an admin uses the CLI (`docker compose exec app ligature reset-password`).
 
-**OIDC (later milestone)**
-- A generic issuer via `openid-client` covers Keycloak, Authentik, Authelia, Google and GitLab. Identities are linked by `(issuer, subject)`, never by email alone.
-- *GitHub is not an OIDC provider for user login.* Supporting it would need a separate OAuth2 flow.
+**OIDC / external login: dropped (decision 2026-11-18).** Ligature uses its own accounts only. (If it is ever
+reconsidered: a generic issuer via `openid-client`, identities linked by `(issuer, subject)`, never by email alone;
+GitHub is not an OIDC provider.)
 
 **Audit log:** logins, membership changes, restores and deletions.
 
@@ -282,7 +282,6 @@ The results are JSON boxes. The app maps build paths back to file ids, and the c
 
 ```
 users(id, email UNIQUE COLLATE NOCASE, name, password_hash NULL, is_admin, created_at, disabled_at)
-oidc_identities(user_id, issuer, subject, UNIQUE(issuer, subject))
 sessions(id_hash PK, user_id, created_at, last_seen_at, expires_at, user_agent)
 projects(id, name, owner_id, root_folder_id, main_file_id NULL, engine, texlive_year,
          sandbox_uid UNIQUE, tree_rev, created_at, deleted_at)
@@ -339,7 +338,7 @@ e2e/                Playwright: two browsers co-editing, permissions, compile
 | **M1: MVP** (≈4–6 wk) | Signup/login with sessions and argon2, registration modes. Projects, members, roles, invite links, revocation. File tree with root row, uploads, soft delete. Co-editing with cursors and project presence. Manual compile with the full uid sandbox. PDF viewer. Log panel with basic `file:line:` errors. Compose file, Caddy example, `ligature backup`. **Malicious-TeX corpus in CI.** | Two users on a VPS co-write and compile a paper with images and a `.bib`. A viewer cannot edit or compile. Every corpus case (`\input{/etc/passwd}`, `\openout`, `\write18`, `\directlua{io.open/io.popen}`, infinite loop, log flood, huge image, reading another project's dir) fails safely. |
 | **M2: compile loop** (≈2–3 wk) | Log parser package with fixtures and `@codemirror/lint` gutter markers. SyncTeX in both directions. Auto-compile after 2.5 s idle. Main-file detection, engine setting. Scroll kept across recompiles. Hardened zip import/export. Trash and restore. Rate limits. | Clicking an error or the PDF lands on the right line, and a broken zip cannot escape its directory. |
 | **M3: history and robustness** (≈2 wk) | Versions and manifests, diff view, restore with automatic pre-restore version. Compaction with epoch bump plus the recovery dialog. Blob GC. Admin page. **fast-check property test**: N clients, random edits, disconnects, server crash and restart. | The property test passes in CI: all clients converge and the persisted text equals the clients' text. A restore can itself be undone. |
-| **M4: self-host polish** (≈1–2 wk) | OIDC, SMTP password reset, audit log. gVisor sandbox documented and tested. `/healthz` that also checks the WebSocket upgrade. Upgrade and backup-restore docs, with the restore procedure actually tested. | A stranger can deploy from the README and restore from a backup. |
+| **M4: self-host polish** (≈1–2 wk) | SMTP password reset, audit log. (OIDC dropped.) gVisor sandbox documented and tested. `/healthz` that also checks the WebSocket upgrade. Upgrade and backup-restore docs, with the restore procedure actually tested. | A stranger can deploy from the README and restore from a backup. |
 | **M5+: later** | **In-house LaTeX language support for CodeMirror** (MIT, our own Lezer grammar replacing the basic `stex` mode: accurate highlighting, folding of environments/sections, autocomplete for commands, environments, `\ref` labels and `\cite` keys from the project `.bib`). Comments (anchored with `Y.RelativePosition`), git export or bridge, `y-indexeddb` offline mode, texlab LSP, multiple TeX Live years, Typst, track changes (last, on purpose). | Driven by real user requests. |
 
 **About 5–8 weeks to a safe MVP (M0 + M1), and about 12 weeks to M4.**
