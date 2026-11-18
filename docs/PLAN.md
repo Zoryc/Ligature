@@ -36,9 +36,9 @@
 | Sync | `@hocuspocus/server` + `@hocuspocus/provider` 4.8.x, **`yjs@13.6.x` pinned** | The most mature Yjs server: auth hooks, `readOnly` connections, debounced storage, document unloading, `openDirectConnection`. **Do not start on Yjs v14 (`@y/y`); it is still a release candidate.** |
 | Database | SQLite in WAL mode via `better-sqlite3` + Drizzle | One file, trivial backups, and plenty for tens of concurrent editors. |
 | Passwords | `@node-rs/argon2` (argon2id). Set **m=19456 KiB, t=2, p=1 explicitly**; don't rely on the library defaults. | Prebuilt binaries, so no node-gyp on Windows. |
-| Frontend | Vite + Svelte 5 SPA (React if you already know it) | The editor and PDF viewer don't depend on the framework. |
+| Frontend | **Vite + Svelte 5 SPA** (decided) | The editor and PDF viewer don't depend on the framework; Svelte keeps the UI code small. |
 | Editor | CodeMirror 6 (`@codemirror/view` 6.43) + `y-codemirror.next` 0.3.6 | Remote cursors and per-user undo out of the box. Overleaf also uses CM6. |
-| LaTeX mode | `codemirror-lang-latex` (AGPL) **or** the `stex` mode from `@codemirror/legacy-modes` (MIT) | Depends on your licence choice (see open questions). |
+| LaTeX mode | `stex` mode from `@codemirror/legacy-modes` (MIT) | Project is MIT-licensed, so the AGPL `codemirror-lang-latex` is off-limits. Improve highlighting in-house later. |
 | PDF | `pdfjs-dist` 6.x (`PDFViewer`) | Text layer, lazy rendering, and an overlay for SyncTeX highlights. |
 | TeX | TeX Live 2026 + latexmk in a separate `compiler` container | Full compatibility (biber, glossaries, …). Tectonic is XeTeX-only and is not a sandbox. |
 | Tests | Vitest, fast-check, Playwright | Property tests for sync, end-to-end tests with two browsers. |
@@ -361,12 +361,17 @@ e2e/                Playwright: two browsers co-editing, permissions, compile
 
 ---
 
-## 11. Open questions for you
+## 11. Decisions
 
-1. **Licence: AGPL-3.0 or MIT?** AGPL lets you use `codemirror-lang-latex` (Overleaf-derived, very good LaTeX support) and borrow from Overleaf, TeXlyre and Aldine (Aldine is a 2026 project with a design close to this one and worth reading). MIT means the `stex` mode and writing everything yourself.
-2. **Who will the users be?** A trusted team or lab (the uid sandbox is enough), or open registration for strangers (gVisor required from day one)?
-3. **Do your documents need `minted`/shell-escape or LuaLaTeX/fontspec?** This affects the sandbox opt-ins and the image build.
-4. **Svelte or React,** and do you have a strong preference for Go on the backend? The plan assumes TypeScript everywhere.
+| Topic | Decision (2026-11-18) | Consequence |
+|---|---|---|
+| Licence | **MIT** | Do not copy code from AGPL projects (Overleaf, `codemirror-lang-latex`, TeXlyre, Aldine). They may be *read* for ideas only. LaTeX highlighting starts from the MIT `stex` legacy mode and is improved in-house later (a Lezer grammar is a possible M5+ item). |
+| Users | **Trusted team / lab** | The default `uid` sandbox is sufficient. Registration stays `invite-only` by default. gVisor remains an optional hardening documented in M4, not a requirement. |
+| Frontend | **Svelte 5 + Vite** (TypeScript) | Less boilerplate than React for a solo developer. CodeMirror, Yjs and PDF.js are framework-agnostic, so they are wrapped in thin Svelte components. |
+| Backend language | **TypeScript on Node 24** | As in section 2. |
+
+### Still open
+- **Does the team need `minted` (needs shell-escape) or LuaLaTeX/XeLaTeX with system fonts (`fontspec`)?** Default assumption: pdfLaTeX, XeLaTeX and LuaLaTeX are all available; fonts come only from TeX Live; shell-escape is off, with `minted` available only if an admin enables restricted mode.
 
 *Unverified, to confirm in M0:*
 - the exact Hocuspocus 4 mounting and request-header API;
