@@ -426,3 +426,31 @@ per-project `TEXMFVAR` when it is pre-generated system-wide.
 - Uploads are buffered in memory (bounded: at most 8 × 50 MB per process); streaming to disk is a later refactor.
 - Rate limits, upload slots and WebSocket caps are in memory, per process (fine for one server).
 - No blob garbage collection yet (M3).
+
+## 14. M2 results (2026-11-18)
+
+**Done-criteria met**, verified in the browser: deleting a folder puts **one** entry in the trash can (who, when,
+size, "deleted forever in 30 days"); restoring it next to a new folder of the same name brings it back as
+`chapters (restored)/` with the file content intact; auto-compile runs ~2.5 s after typing; an error shows as a gutter
+marker + underline + problems-list entry (`main.tex:9`); double-clicking the PDF lands on the right source line and
+"Show in PDF" highlights the right spot. ~890 automated tests locally; CI covers the same on Linux.
+
+**What was built** (see `docs/M2.md`)
+- `packages/latex-log-parser` (own MIT code): errors, LaTeX/package/class/font warnings, bad boxes, undefined
+  references/citations, missing files, BibTeX/Biber, with file attribution from the TeX file stack; fixtures are real
+  pdf/xe/lualatex logs (sanitised of local paths).
+- `packages/synctex` (own MIT code): agrees with the `synctex` CLI on 99% of forward lookups and 97.8% of inverse
+  clicks on text (pdfLaTeX/XeLaTeX). Known difference: in some LuaLaTeX layouts the CLI answers the `\end{document}`
+  line where we return the real line (we prefer ours).
+- Server: trash batches (migration 3), restore with clash renaming, purge, empty, 30-day retention; zip export and
+  hardened import (limits enforced while inflating, symlinks/encrypted/duplicate/NFC-twin names refused, junk skipped,
+  main file detected, atomic); diagnostics mapped to file ids; SyncTeX routes with a parsing worker thread and budgets;
+  per-user compile rate limit and queue cap; main-file detection at compile time.
+- Web: trash can panel, lint gutter + problems list, SyncTeX both ways, auto-compile toggle, Ctrl/Cmd+S, zip UI.
+
+**Still open after M2**
+- SyncTeX/diagnostic positions are mapped through *your own* edits since the build; edits others make to files you
+  don't have open are not accounted for until the next build.
+- Missing-package errors carry no line number (TeX's log doesn't give one); errors raised while a TeX Live package
+  loads are attributed to the project file without a line.
+- M1 uploads still have no body deadline (imports do); NFC/NFD twin names are only refused on zip import.

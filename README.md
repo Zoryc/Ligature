@@ -2,10 +2,11 @@
 
 A self-hostable, real-time collaborative LaTeX editor with user accounts.
 
-> Status: **M1 done** — accounts, projects with members and invite links, file tree with uploads, live co-editing,
-> sandboxed compiles, Docker deployment ([docker/README.md](docker/README.md)). Early software: expect rough edges.
-> See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, [docs/M1.md](docs/M1.md) for the current
-> API contract, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
+> Status: **M2 done** — accounts, projects with members and invite links, file tree with uploads and a trash can,
+> live co-editing, sandboxed compiles with auto-compile, errors in the editor gutter, SyncTeX (PDF ↔ source), zip
+> import/export, Docker deployment ([docker/README.md](docker/README.md)). Early software: expect rough edges.
+> See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, [docs/M1.md](docs/M1.md) and
+> [docs/M2.md](docs/M2.md) for the API contract, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
 
 ## Try it locally (Windows, macOS, Linux)
 
