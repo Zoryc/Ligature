@@ -63,3 +63,6 @@ desktop.ini
 
 # Local Claude Code / editor launch configs
 .claude/
+
+# Compiler worker build/cache dirs (dev default BUILDS_DIR=./builds)
+builds/
