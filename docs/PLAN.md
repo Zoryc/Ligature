@@ -454,3 +454,31 @@ marker + underline + problems-list entry (`main.tex:9`); double-clicking the PDF
 - Missing-package errors carry no line number (TeX's log doesn't give one); errors raised while a TeX Live package
   loads are attributed to the project file without a line.
 - M1 uploads still have no body deadline (imports do); NFC/NFD twin names are only refused on zip import.
+
+## 15. M3 results (2026-11-18)
+
+**Done-criteria met.** The sync property test (fast-check; 3 clients; random concurrent edits, disconnects, offline
+edits, `SIGKILL` + restart of the real server, a log-only recovery step and a graceful restart) passes locally and
+in CI; it was mutation-checked (with persistence of updates disabled it fails on the first run). Verified in the
+browser: a named version, a side-by-side diff against the current state, restore of the whole project (applied
+in place, no reconnect), **Undo** from the toast, and the "Before restoring…" backups in the history list.
+
+**Decision:** own versioning (content-addressed manifests in SQLite + the blob store), not git; a git export /
+bridge can be layered on later.
+
+**What was built** (see `docs/M3.md`)
+- Versions: auto (5 min of activity, last client leaving), compile, named, pre-restore, import; dedupe by manifest
+  hash; authors per version; the original state is versioned before the first change; retention thinning.
+- Diff by file id then path (renames), against the previous version or the current state; per-file content and
+  zip download of any version.
+- Restore of a whole project or single files: pre-restore version, text applied as Yjs diffs, renames reverted,
+  trashed files restored, purged files recreated, extra files moved to the trash; `version-restored` event with Undo.
+- Maintenance: blob GC (live + trashed + version references, 24 h grace on mtime), orphan doc rows, 30-day purge of
+  deleted projects, oversized-document rebuild with epoch bump and a recovery dialog, admin storage page.
+
+**Still open after M3**
+- No way yet to **erase content from history** (e.g. a pasted secret): named and pre-restore versions are never
+  thinned. An owner/admin "purge from history" action is the natural follow-up.
+- Labels nest when an undo is undone (`Before restoring "Before restoring "Draft 1""`).
+- Version-list and diff requests against `current` take a full snapshot each time (rate-limited, not cached).
+- Tests use fixed ports; on Linux the ephemeral port range must not overlap them (CI sets it; README explains).

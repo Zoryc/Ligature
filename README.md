@@ -2,11 +2,13 @@
 
 A self-hostable, real-time collaborative LaTeX editor with user accounts.
 
-> Status: **M2 done** — accounts, projects with members and invite links, file tree with uploads and a trash can,
+> Status: **M3 done** — accounts, projects with members and invite links, file tree with uploads and a trash can,
 > live co-editing, sandboxed compiles with auto-compile, errors in the editor gutter, SyncTeX (PDF ↔ source), zip
-> import/export, Docker deployment ([docker/README.md](docker/README.md)). Early software: expect rough edges.
-> See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, [docs/M1.md](docs/M1.md) and
-> [docs/M2.md](docs/M2.md) for the API contract, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
+> import/export, **project history** (versions, side-by-side diff, restore with undo), storage housekeeping, Docker
+> deployment ([docker/README.md](docker/README.md)). Early software: expect rough edges.
+> See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, [docs/M1.md](docs/M1.md),
+> [docs/M2.md](docs/M2.md) and [docs/M3.md](docs/M3.md) for the API contract, and [docs/SYNC.md](docs/SYNC.md) for
+> the sync-model research.
 
 ## Try it locally (Windows, macOS, Linux)
 
@@ -31,22 +33,26 @@ each `*.localhost` host has its own login cookie.
 npm test            # all packages
 ```
 
-The compiler's real-TeX tests run automatically when `latexmk` is on `PATH`.
+The real-TeX tests (compiler, log parser, SyncTeX, server compiles) run automatically when `latexmk` is on `PATH`.
+The sync property test (random edits, disconnects and `kill -9` of the real server) runs 25 cases by default;
+set `PROPERTY_RUNS=200` for a longer local run.
+
+**On Linux:** the server and compiler tests listen on fixed ports 39100–39999, inside Linux's default range for
+outgoing connections (32768–60999), which can rarely cause `EADDRINUSE`. CI moves that range
+(`net.ipv4.ip_local_port_range = 50000 65000`); do the same locally if you see it.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `apps/server` | Hono API + Hocuspocus (Yjs) collaboration server, SQLite persistence, compile orchestration |
+| `apps/server` | Hono API + Hocuspocus (Yjs) collaboration server, SQLite persistence, compile orchestration, history |
 | `apps/web` | Svelte 5 SPA: CodeMirror 6 editor, PDF.js viewer |
 | `apps/compiler` | Sandboxed latexmk worker (unix socket in production) |
 | `packages/shared` | Contracts and validation shared by all of the above |
+| `packages/latex-log-parser` | TeX/latexmk log → diagnostics |
+| `packages/synctex` | SyncTeX parser: PDF ↔ source lookups |
 | `docker/` | Production images and compose file |
 
 ## License
 
 MIT
-
-> **Running the tests on Linux:** the server and compiler tests listen on fixed ports 39100–39999, inside Linux's
-> default range for outgoing connections (32768–60999), which can rarely cause `EADDRINUSE`. CI moves that range
-> (`net.ipv4.ip_local_port_range = 50000 65000`); do the same locally if you see it.
