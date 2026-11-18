@@ -256,3 +256,128 @@ export type MetaEvent =
   | { type: 'access-revoked'; userId: string }
   | { type: 'project-deleted' }
   | { type: 'trash-changed' }                           // M2: something was deleted, restored or purged
+  | { type: 'versions-changed' }                        // M3: a version was created, named or thinned
+  | { type: 'version-restored'; versionId: string; preRestoreVersionId: string; by: string } // M3
+
+/* ------------------------------------------------------------------ history (M3) */
+
+/**
+ * auto        taken by the server while people edit (every 5 min of activity, and when the last editor leaves)
+ * compile     taken after a successful compile (at most every 10 min, only if something changed)
+ * named       created or named by a user; never thinned
+ * pre_restore taken automatically just before a restore, so the restore can be undone; never thinned
+ * import      the initial state of a project imported from a zip
+ */
+export type VersionKind = 'auto' | 'compile' | 'named' | 'pre_restore' | 'import'
+
+export interface VersionSummary {
+  id: string
+  kind: VersionKind
+  /** Set for named versions (and optionally others a user labelled). */
+  label: string | null
+  createdAt: number
+  /** Display name of whoever caused it (named / restore), or '' for automatic versions. */
+  createdBy: string
+  /** Display names of everyone who changed something since the previous version (sorted). */
+  authors: string[]
+  fileCount: number
+  /** Files added / removed / modified compared with the previous version (0/0/0 for the first). */
+  changes: { added: number; removed: number; modified: number }
+}
+
+/** GET /api/projects/:id/versions?before=<versionId>&limit=<1..100, default 50>  (member) — newest first */
+export interface VersionPage { versions: VersionSummary[]; hasMore: boolean }
+
+/** POST /api/projects/:id/versions  (owner/editor) — snapshot the current state as a named version */
+export interface CreateVersionRequest { label: string }
+/** PATCH /api/projects/:id/versions/:versionId  (owner/editor) — label a version (it is then never thinned) */
+export interface UpdateVersionRequest { label: string | null }
+
+export interface VersionFile {
+  path: string
+  /** The file's id at snapshot time (may no longer exist). */
+  fileId: string
+  kind: 'text' | 'binary'
+  size: number
+  /** sha256 of the content (text as UTF-8). */
+  hash: string
+}
+
+/** GET /api/projects/:id/versions/:versionId  (member) */
+export interface VersionDetail { version: VersionSummary; files: VersionFile[] }
+
+/**
+ * GET /api/projects/:id/versions/:versionId/file?path=<path>  (member) — the file's content in that version
+ * (text/plain; charset=utf-8 for text, the blob for binaries; same safe headers as M1 raw downloads).
+ */
+
+export type FileChange = 'added' | 'removed' | 'modified' | 'renamed' | 'unchanged'
+
+/**
+ * GET /api/projects/:id/versions/:versionId/diff?against=<versionId|current>  (member)
+ * Compares `against` (old side, default: the previous version) with :versionId (new side).
+ * Files are matched by file id first (so a rename is 'renamed', possibly also modified), then by path.
+ */
+export interface VersionDiff {
+  from: string            // version id, or 'current'
+  to: string              // version id, or 'current'
+  files: {
+    change: FileChange
+    path: string          // path on the new side ('' if removed)
+    oldPath: string       // path on the old side ('' if added)
+    kind: 'text' | 'binary'
+    oldHash: string | null
+    newHash: string | null
+    /** For renamed text files whose content also changed. */
+    modified: boolean
+  }[]
+}
+
+/**
+ * POST /api/projects/:id/versions/:versionId/restore  (owner/editor)
+ * Without `paths`: restore the whole project to that version. With `paths`: only those files (paths in the version).
+ */
+export interface RestoreVersionRequest { paths?: string[] }
+export interface RestoreVersionResponse {
+  /** Snapshot taken just before the restore: restoring it undoes the restore. */
+  preRestoreVersionId: string
+  /** Files changed by the restore. */
+  restored: number
+  /** Files moved to the trash because they didn't exist in that version (whole-project restore only). */
+  trashed: number
+}
+
+/* ------------------------------------------------------------------ admin storage (M3) */
+
+/** GET /api/admin/storage  (admin) */
+export interface StorageReport {
+  databaseBytes: number
+  blobs: { count: number; bytes: number }
+  /** Blobs no live file, trashed file or version refers to (removed by the next GC after the grace period). */
+  unreferenced: { count: number; bytes: number }
+  projects: {
+    id: string
+    name: string
+    owner: string
+    deleted: boolean
+    liveFiles: number
+    liveBytes: number
+    trashBytes: number
+    versions: number
+  }[]
+  lastGc: GcReport | null
+}
+
+/** POST /api/admin/gc  (admin) -> GcReport; also runs daily */
+export interface GcReport {
+  at: number
+  durationMs: number
+  blobsRemoved: number
+  bytesFreed: number
+  /** doc_state/doc_updates rows of docs no file refers to. */
+  orphanDocsRemoved: number
+  /** Versions removed by the retention thinning. */
+  versionsThinned: number
+  /** Soft-deleted projects older than the retention, purged. */
+  projectsPurged: number
+}
