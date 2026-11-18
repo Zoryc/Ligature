@@ -11,8 +11,13 @@ npm run dev:server   # API + collaboration server on http://127.0.0.1:3000
 npm run dev:web      # Vite on http://localhost:5173 (proxies /api and /collab to :3000)
 ```
 
-Open http://localhost:5173 and use one of the dev logins: alice (owner), bob (editor), carol (viewer).
-To try co-editing, use two browsers, or one normal window and one private window.
+Open http://localhost:5173 and log in. In development the server seeds alice (owner, admin), bob (editor) and carol (viewer)
+with the password `ligature-dev-password`; the login page also shows quick-login buttons when the server reports `devLogin`.
+To try co-editing, use two browsers, or a second origin with its own cookies such as http://bob.localhost:5173.
+
+Ports are configurable: `LIGATURE_API_PORT` (where the Vite proxy sends /api and /collab, default 3000) and
+`LIGATURE_WEB_PORT` (Vite's own port, default 5173). The server's ALLOWED_ORIGINS must include the Vite origin
+(in development any http://*.localhost:<port> origin is accepted).
 
 Compiling needs the compiler worker on `http://127.0.0.1:7071` (see the repo docs). Without it, Recompile shows
 "Compiler unavailable" in the log panel.
@@ -27,15 +32,23 @@ The Vite proxy forwards the browser's Origin as it is (`changeOrigin` is deliber
 | `npm run dev` | Vite dev server |
 | `npm run build` | Production build to `dist/` (static files) |
 | `npm run typecheck` | `svelte-check` (uses this package's own TypeScript 5.9, because svelte-check does not support TS 7 yet) |
-| `npm test` | Vitest unit tests for the pure helpers (log parsing, tree, "PDF is behind", colours) |
+| `npm test` | Vitest unit tests for the pure helpers (log parsing, tree ops, routes, errors, events, "PDF is behind", colours) |
 
 ## Layout
 
 ```
 src/
-  main.ts, App.svelte        hash routing: #/login, #/projects, #/project/:id
-  pages/                     Login, Projects, Project (tree | editor | PDF + log)
-  lib/api.ts                 REST client (cookie session; 401 -> login page)
+  main.ts, App.svelte        hash routing: #/login, #/signup, #/invite/:token, #/projects, #/project/:id, #/account, #/admin
+  pages/                     Login, Signup, Invite, Projects, Account, Admin, Project (tree | editor | PDF + log)
+  lib/api.ts                 REST client (cookie session; 401 -> login page) + raw uploads with progress (XHR)
+  lib/routes.ts              pure route parsing, safe ?next= handling
+  lib/errors.ts              server error codes -> friendly messages
+  lib/validation.ts          client-side username/password/display-name checks, who may sign up
+  lib/treeOps.ts             paths, name checks, move targets, drop targets, upload planning
+  lib/projectEvents.ts       MetaEvent / CLOSE reason / auth-failure -> actions for the project page
+  lib/dialogs.svelte.ts      in-page confirm/prompt/select dialogs (DialogHost.svelte)
+  lib/SettingsPanel.svelte   rename (owner), engine + main file (owner/editor)
+  lib/MembersPanel.svelte    members, roles, transfer, invites (owner); leave (others)
   lib/collab.ts              one shared Hocuspocus socket per page, one provider per open file, meta doc for presence + events
   lib/presence.ts            sanitizes remote presence (awareness) states: colours derived from the user id, names capped
   lib/behind.ts              "PDF is behind" (state vector + delete set comparison against the build)
@@ -43,7 +56,7 @@ src/
   lib/Editor.svelte          CodeMirror 6 + y-codemirror.next (Y.UndoManager undo, stex highlighting, read-only for viewers)
   lib/PdfView.svelte         pdf.js 6, lazy-loaded; only pages near the viewport have a canvas; keeps the scroll position
   lib/LogPanel.svelte        build status + log; `file:line:` errors are clickable
-  lib/FileTree.svelte        tree built from the flat project tree
+  lib/FileTree.svelte        tree + file actions (new, rename, move, delete, set main, download, upload, drag-and-drop)
 ```
 
 ## Deploying the build

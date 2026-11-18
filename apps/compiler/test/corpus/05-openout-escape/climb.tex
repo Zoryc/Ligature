@@ -1,0 +1,20 @@
+% Case 5d (lualatex): \openout of a relative name after the cwd was moved out of the project with
+% lfs.chdir("..") (climb.lua): first into a world-writable directory, then into one the project may not write.
+% Expected: nothing is written there (latexmk's -output-directory makes TeX put relative \openout names
+% into out/, whatever the cwd; and in the uid sandbox the second directory is not writable anyway).
+\documentclass{article}
+\directlua{dofile("climb.lua")}
+\newwrite\evil
+\begin{document}
+Writing.
+\directlua{corpus_climb("ww")}
+\immediate\openout\evil=@CLIMB_FILE@-openout.tex
+\immediate\write\evil{pwned}
+\immediate\closeout\evil
+\directlua{corpus_home()}
+\directlua{corpus_climb("locked")}
+\immediate\openout\evil=@CLIMB_FILE@-openout.tex
+\immediate\write\evil{pwned}
+\immediate\closeout\evil
+\directlua{corpus_home()}
+\end{document}

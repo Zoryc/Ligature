@@ -1,0 +1,12 @@
+% Shared by the corpus cases (copied into each project as probe.tex).
+% \tryread{<label>}{<path>}: tries \openin on <path> and logs whether TeX got the file, WITHOUT printing
+% its content, so the test can tell "refused" from "read" (and the content must not appear anyway).
+\newread\corpusprobe
+\def\tryread#1#2{%
+  \immediate\openin\corpusprobe=#2\relax
+  \ifeof\corpusprobe
+    \typeout{CORPUS-PROBE #1: refused}%
+  \else
+    \typeout{CORPUS-PROBE #1: READ}%
+    \immediate\closein\corpusprobe
+  \fi}

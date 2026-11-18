@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -80,15 +80,22 @@ export function connect(base: string, cookie: string, docName: string) {
   })
   const doc = new Y.Doc()
   let denied: string | null = null
+  /** Reasons of per-document CLOSE messages from the server (revocation). */
+  const closes: string[] = []
+  /** Stateless payloads received (MetaEvents on the meta doc). */
+  const stateless: string[] = []
   const provider = new HocuspocusProvider({
     websocketProvider: socket, name: docName, document: doc, token: '',
     onAuthenticationFailed: ({ reason }) => { denied = reason },
+    onClose: ({ event }) => { if (event?.reason) closes.push(event.reason) },
+    onStateless: ({ payload }) => { stateless.push(payload) },
   })
   provider.attach()
   return {
-    doc, provider, socket,
+    doc, provider, socket, closes, stateless,
     text: () => doc.getText('content'),
     denied: () => denied,
+    events: () => stateless.map(s => JSON.parse(s) as { type: string; [k: string]: unknown }),
     destroy: () => { provider.destroy(); socket.destroy() },
   }
 }
@@ -99,4 +106,27 @@ export async function waitFor(cond: () => boolean, timeoutMs = 10_000, what = 'c
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
     await sleep(25)
   }
+}
+
+export const COMPILER_DIR = resolve(import.meta.dirname, '../../compiler')
+export const HAS_LATEXMK = spawnSync('latexmk -v', { shell: true, stdio: 'ignore' }).status === 0
+
+/** Start the real compiler worker (SANDBOX=none) on a TCP port. */
+export async function startCompiler(port: number): Promise<ChildProcess> {
+  const proc = spawn(process.execPath, ['src/worker.ts'], {
+    cwd: COMPILER_DIR,
+    env: { ...process.env, NODE_ENV: 'development', COMPILER_LISTEN: `tcp:127.0.0.1:${port}`, SANDBOX: 'none',
+      BUILDS_DIR: mkdtempSync(join(tmpdir(), 'ligature-builds-')) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let out = ''
+  proc.stdout!.on('data', d => { out += d }); proc.stderr!.on('data', d => { out += d })
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null) throw new Error(`compiler exited:\n${out}`)
+    try { if ((await fetch(`http://127.0.0.1:${port}/healthz`)).ok) return proc } catch { /* not up */ }
+    await sleep(100)
+  }
+  proc.kill('SIGKILL')
+  throw new Error(`compiler did not start:\n${out}`)
 }

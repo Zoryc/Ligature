@@ -1,0 +1,6 @@
+% Case 11: the project ships latexmkrc files (Perl, i.e. arbitrary code). Expected: latexmk runs with
+% -norc, so none of them is executed: no marker file appears and the document builds normally.
+\documentclass{article}
+\begin{document}
+A project with latexmkrc files.
+\end{document}

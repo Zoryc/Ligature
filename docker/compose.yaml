@@ -16,10 +16,14 @@ services:
       DATA_DIR: /data
       COMPILER_URL: unix:/run/ligature/compiler.sock
       ALLOWED_ORIGINS: ${LIGATURE_ORIGIN:?set LIGATURE_ORIGIN to the public URL, e.g. https://latex.example.org}
+      # 1 = rate limits use the first X-Forwarded-For hop. Only behind a proxy that overwrites that header
+      # (Caddy does for untrusted clients); the app port is bound to 127.0.0.1 so nothing else can set it.
+      TRUST_PROXY: ${LIGATURE_TRUST_PROXY:-0}
+      # The SPA (apps/web/dist) is served by the app itself: WEB_DIST_DIR is set in the image.
     ports:
-      - "127.0.0.1:3000:3000"        # only the local reverse proxy talks to the app
+      - "127.0.0.1:${LIGATURE_PORT:-3000}:3000"   # only the local reverse proxy talks to the app
     volumes:
-      - data:/data                   # app.db, blobs, build outputs: never mounted in the compiler
+      - data:/data                   # app.db, blobs, build outputs, backups/: never mounted in the compiler
       - run:/run/ligature            # the compiler's unix socket
     depends_on:
       compiler:
@@ -38,7 +42,7 @@ services:
       dockerfile: docker/Dockerfile.compiler
       args:
         # medium scheme for a small VPS: see the comment at the top of Dockerfile.compiler
-        TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:TL2026-full}
+        TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:latest-full@sha256:c21636aa13e86716d15dab4e352356cb0d34f9365d6091db066e5df71041d67b}
     image: ligature-compiler:tl2026
     restart: unless-stopped
     # No `init: true` needed: the image's entrypoint is tini, which reaps orphaned TeX processes.
@@ -63,8 +67,13 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: 4g
     pids_limit: 512
+    # No world-writable directory anywhere in this container: a LuaLaTeX document can leave its project with
+    # relative lfs.chdir("..") (TeX's openout_any does not stop that) and then write wherever its uid may.
+    # The root filesystem is read-only, /tmp is root-only (TeX gets a private TMPDIR in its project) and
+    # `ipc: none` removes /dev/shm. Checked by apps/compiler/test/deployConfig.test.ts and corpus case 4.
+    ipc: none
     tmpfs:
-      - /tmp:size=64m
+      - /tmp:size=64m,mode=0700
     volumes:
       - builds:/builds               # per-project build dirs (0700, project uid), blob cache, latest outputs
       - run:/run/ligature            # socket directory; root-owned so compile processes cannot reach the worker

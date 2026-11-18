@@ -1,0 +1,11 @@
+% Case 1c: a file outside the project that the project's uid may not read (root-only, mode 0600).
+% Expected: refused (uid sandbox: permissions; older TeX Live also openin_any=p), and the final \input
+% aborts the run (status failure), so the content appears nowhere.
+\documentclass{article}
+\input{probe}
+\tryread{private-absolute}{@PRIVATE@}
+\tryread{private-dotdot}{../../../outside/private.txt}
+\begin{document}
+Probed.
+\input{@PRIVATE@}
+\end{document}

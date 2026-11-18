@@ -1,0 +1,8 @@
+% Case 1b: a plain \input{/etc/passwd}. TeX Live < 2026: refused by openin_any=p, the run aborts
+% (status failure), no content leak. TeX Live 2026 reads it (world-readable): reported as a KNOWN GAP.
+\documentclass{article}
+\begin{document}
+Before.
+\input{/etc/passwd}
+After.
+\end{document}

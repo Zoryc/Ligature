@@ -15,7 +15,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.compiler
       args:
-        TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:TL2026-full}
+        TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:latest-full@sha256:c21636aa13e86716d15dab4e352356cb0d34f9365d6091db066e5df71041d67b}
     image: ligature-compiler:tl2026
     environment:
       NODE_ENV: production
@@ -31,8 +31,13 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: 4g
     pids_limit: 512
+    # No world-writable directory anywhere in this container: a LuaLaTeX document can leave its project with
+    # relative lfs.chdir("..") (TeX's openout_any does not stop that) and then write wherever its uid may.
+    # The root filesystem is read-only, /tmp is root-only (TeX gets a private TMPDIR in its project) and
+    # `ipc: none` removes /dev/shm. Checked by apps/compiler/test/deployConfig.test.ts and corpus case 4.
+    ipc: none
     tmpfs:
-      - /tmp:size=64m
+      - /tmp:size=64m,mode=0700
     volumes:
       - builds:/builds
 

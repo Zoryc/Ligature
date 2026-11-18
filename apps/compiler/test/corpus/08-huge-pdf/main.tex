@@ -1,0 +1,7 @@
+% Case 8: a PDF beyond the 100 MB output cap (an uncompressed stream object of @PDF_MB@ MiB, lualatex).
+% Expected: the PDF is discarded with a note in the log, nothing is served, the worker stays healthy.
+\documentclass{article}
+\directlua{dofile("big.lua")}
+\begin{document}
+Big.
+\end{document}

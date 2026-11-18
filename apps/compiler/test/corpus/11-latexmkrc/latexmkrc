@@ -1,0 +1,4 @@
+# Must never run (latexmk -norc).
+open(my $fh, '>', '@PWNED@') and print $fh "pwned by latexmkrc\n" and close($fh);
+system('touch', '@PWNED@');
+$pdflatex = 'touch @PWNED@; pdflatex %O %S';

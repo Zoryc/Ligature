@@ -1,0 +1,8 @@
+% Case 10, build 1 (lualatex): plant symlinks in out/ where the outputs are expected, pointing at files
+% outside the project (uid mode: /etc/shadow and a file of the worker's blob cache). The document has
+% no pages, so TeX itself never writes output.pdf in this build.
+% Expected: the links are never followed: not reported as outputs, never served, targets unchanged.
+\documentclass{article}
+\directlua{dofile("plant.lua")}
+\begin{document}
+\end{document}

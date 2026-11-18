@@ -1,0 +1,8 @@
+% Case 7: a log flood (millions of \message). Expected: the reported log is capped (2 MB + notices),
+% the worker stays healthy; the build may succeed, hit the disk quota or time out.
+\documentclass{article}
+\begin{document}
+\count255=0
+\loop\ifnum\count255<@FLOOD_LINES@ \message{log flood log flood log flood}\advance\count255 by 1 \repeat
+Flooded.
+\end{document}

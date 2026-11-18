@@ -1,0 +1,14 @@
+% Case 9b: a \loop writing @MANY_FILES@ files (into out/). Expected: the per-project file limit
+% (PROJECT_MAX_FILES) stops the build: status failure, the files are deleted, the worker stays healthy.
+\documentclass{article}
+\newwrite\many
+\begin{document}
+\count255=0
+\loop\ifnum\count255<@MANY_FILES@
+  \immediate\openout\many=many-\the\count255.txt
+  \immediate\write\many{x}%
+  \immediate\closeout\many
+  \advance\count255 by 1
+\repeat
+Written.
+\end{document}

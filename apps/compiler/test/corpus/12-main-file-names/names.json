@@ -1,0 +1,30 @@
+{
+  "comment": "unbuildable: valid project paths the worker refuses as a main file (200, status failure, nothing spawned). invalid: never valid paths (400 bad-request).",
+  "unbuildable": [
+    "-shell-escape.tex",
+    "--shell-escape.tex",
+    "-interaction=batchmode.tex",
+    "$(touch pwned).tex",
+    "`touch pwned`.tex",
+    "a;touch pwned.tex",
+    "a&&touch pwned.tex",
+    "&pdflatex.tex",
+    "%comment.tex",
+    "x'y.tex",
+    "$HOME.tex",
+    ".hidden.tex",
+    "sub/-shell-escape.tex",
+    "ok/$(id).tex",
+    "main.tex.sh"
+  ],
+  "invalid": [
+    "a|touch pwned.tex",
+    "q\"uote.tex",
+    "back\\slash.tex",
+    "../escape.tex",
+    "/etc/passwd.tex",
+    "new\nline.tex",
+    " leading-space.tex",
+    "sub//double.tex"
+  ]
+}

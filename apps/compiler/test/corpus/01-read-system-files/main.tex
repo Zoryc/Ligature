@@ -1,0 +1,14 @@
+% Case 1: reading world-readable files outside the project with TeX primitives (\openin, \input).
+% With TeX Live < 2026, openin_any=p refuses absolute and ../ paths: every probe is refused and the final
+% \input aborts the run (status failure). TeX Live 2026's kpathsea no longer applies openin_any to reading
+% at all, and the uid sandbox cannot hide world-readable files: then this is reported as a KNOWN GAP.
+\documentclass{article}
+\input{probe}
+\tryread{etc-passwd}{/etc/passwd}
+\tryread{secret-absolute}{@SECRET@}
+\tryread{secret-relative}{@SECRET_REL@}
+\tryread{secret-dotdot}{../../../outside/secret.txt}
+\begin{document}
+Probed.
+\input{@SECRET@}
+\end{document}

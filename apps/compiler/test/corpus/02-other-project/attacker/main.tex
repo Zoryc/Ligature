@@ -1,0 +1,14 @@
+% Case 2: reading another project's build directory. @OTHER@ is the id of a victim project that was
+% compiled just before, so BUILDS_DIR/@OTHER@/src/secret.tex exists.
+% Expected: all probes refused (.. and absolute paths: openin_any=p; uid sandbox: 0700 dir of another uid),
+% the final \input aborts the run, and the victim's marker appears nowhere.
+\documentclass{article}
+\input{probe}
+\tryread{other-dotdot}{../../@OTHER@/src/secret.tex}
+\tryread{other-absolute}{@BUILDS@/@OTHER@/src/secret.tex}
+\tryread{other-out-aux}{@BUILDS@/@OTHER@/out/output.aux}
+\tryread{blob-cache}{@BLOB@}
+\begin{document}
+Probed.
+\input{../../@OTHER@/src/secret.tex}
+\end{document}

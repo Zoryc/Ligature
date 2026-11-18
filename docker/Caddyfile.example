@@ -3,9 +3,8 @@
 #   sudo systemctl reload caddy
 # The app listens on 127.0.0.1:3000 only (docker/compose.yaml). reverse_proxy passes WebSocket
 # upgrades (/collab) through unchanged. LIGATURE_ORIGIN must be exactly https://<this host>.
-#
-# Not covered yet: serving the web client's static build (apps/web/dist) is still open (see the PLAN);
-# once the app serves it, nothing changes here.
+# The app serves the web client (apps/web/dist) itself, so everything goes to the one upstream.
+# Caddy overwrites X-Forwarded-For from untrusted clients, so LIGATURE_TRUST_PROXY=1 is safe with it.
 
 latex.example.org {
 	encode zstd gzip

@@ -1,0 +1,10 @@
+% Case 5b: \openout to an absolute path outside the project (a world-writable directory, like /tmp).
+% Expected: refused by openout_any=p (absolute paths only under TEXMFOUTPUT = the project's out/).
+\documentclass{article}
+\newwrite\evil
+\begin{document}
+Writing.
+\immediate\openout\evil=@PWNED@
+\immediate\write\evil{pwned}
+\immediate\closeout\evil
+\end{document}

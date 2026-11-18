@@ -72,4 +72,37 @@ export const MIGRATIONS: string[] = [
     updated_at    INTEGER NOT NULL
   );
   `,
+
+  /* 2: M1 — accounts, soft deletes, invites, blobs, audit log (docs/M1.md §7) */ `
+  ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN disabled_at INTEGER;
+  ALTER TABLE projects ADD COLUMN deleted_at INTEGER;
+  ALTER TABLE projects ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE project_members ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE files ADD COLUMN size INTEGER;
+  ALTER TABLE files ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE instance_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE invites (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE, role TEXT NOT NULL CHECK (role IN ('editor','viewer')),
+    created_by TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+    max_uses INTEGER, uses INTEGER NOT NULL DEFAULT 0, revoked_at INTEGER);
+  CREATE TABLE blobs (hash TEXT PRIMARY KEY, size INTEGER NOT NULL, created_at INTEGER NOT NULL);
+  CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id TEXT, project_id TEXT,
+    action TEXT NOT NULL, detail_json TEXT, at INTEGER NOT NULL);
+
+  CREATE INDEX invites_project ON invites(project_id);
+  CREATE INDEX members_user ON project_members(user_id);
+  CREATE INDEX files_project ON files(project_id);
+  CREATE INDEX audit_log_at ON audit_log(at);
+
+  -- Backfill timestamps of rows created before this migration.
+  UPDATE projects SET updated_at = created_at;
+  UPDATE files SET updated_at = created_at;
+  UPDATE project_members SET added_at = (SELECT created_at FROM projects p WHERE p.id = project_id);
+  UPDATE sessions SET last_seen_at = created_at;
+  -- An existing instance (M0) has no admin yet: the oldest account becomes admin.
+  UPDATE users SET is_admin = 1 WHERE id = (SELECT id FROM users ORDER BY created_at, rowid LIMIT 1);
+  `,
 ]

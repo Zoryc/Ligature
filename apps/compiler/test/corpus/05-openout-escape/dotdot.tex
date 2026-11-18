@@ -1,0 +1,9 @@
+% Case 5a: \openout with .. (out of the project). Expected: refused by openout_any=p (the run may abort).
+\documentclass{article}
+\newwrite\evil
+\begin{document}
+Writing.
+\immediate\openout\evil=../../evil.tex
+\immediate\write\evil{\noexpand\message{pwned}}
+\immediate\closeout\evil
+\end{document}

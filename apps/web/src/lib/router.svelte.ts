@@ -1,19 +1,7 @@
-/** Minimal hash router: #/login, #/projects, #/project/:id */
+/** Minimal reactive hash router; parsing lives in routes.ts. */
+import { parseHash, type Route } from './routes.ts'
 
-export type Route =
-  | { name: 'login' }
-  | { name: 'projects' }
-  | { name: 'project'; id: string }
-  | { name: 'not-found' }
-
-export function parseHash(hash: string): Route {
-  const path = hash.replace(/^#/, '') || '/projects'
-  if (path === '/login') return { name: 'login' }
-  if (path === '/projects' || path === '/') return { name: 'projects' }
-  const m = /^\/project\/([^/]+)$/.exec(path)
-  if (m) return { name: 'project', id: decodeURIComponent(m[1]!) }
-  return { name: 'not-found' }
-}
+export type { Route }
 
 export const router = $state<{ route: Route }>({ route: parseHash(location.hash) })
 

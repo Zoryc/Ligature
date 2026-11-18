@@ -10,6 +10,12 @@ const hasLatexmk = (process.platform === 'win32'
   ? spawnSync('latexmk -v', { stdio: 'ignore', shell: true })
   : spawnSync('latexmk', ['-v'], { stdio: 'ignore' })).status === 0
 
+/** Whether kpathsea refuses to READ an absolute path with openin_any=p (TeX Live before 2026). */
+const texGuardsReads = (() => {
+  const r = spawnSync('kpsewhich', ['-safe-in-name=/etc/passwd'], { env: { ...process.env, openin_any: 'p' }, stdio: 'ignore' })
+  return r.status !== null && r.status !== 0 && !r.error
+})()
+
 describe.skipIf(!hasLatexmk)('real latexmk', () => {
   let t: TestWorker
   beforeAll(async () => { t = await startTestWorker({ latexmk: ['latexmk'] }) })
@@ -27,7 +33,9 @@ describe.skipIf(!hasLatexmk)('real latexmk', () => {
 
   // The document itself reports whether \openin got the file, so a refusal is told apart from a
   // file that was read but failed to typeset (which `status !== 'success'` alone could not).
-  it('reading /etc/passwd is refused by openin_any=p', async () => {
+  // TeX Live 2026's kpathsea no longer applies openin_any to reading (only the uid sandbox protects files
+  // there; see test/corpus/README.md, "Known gaps"), so this only holds for older TeX Live.
+  it.skipIf(!texGuardsReads)(`reading /etc/passwd is refused by openin_any=p${texGuardsReads ? '' : ' [skipped: this TeX Live (2026 or later) does not apply openin_any to reading]'}`, async () => {
     const r = await compile(t.base, randomUUID(), {
       'main.tex': '\\documentclass{article}\n\\newread\\probe\n\\immediate\\openin\\probe=/etc/passwd\n' +
         '\\ifeof\\probe\\typeout{LIGATURE-PROBE: refused}\\else\\typeout{LIGATURE-PROBE: was read}\\fi\n' +

@@ -1,0 +1,165 @@
+# Ligature CI (docs/M1.md §7b):
+#   test     typecheck all packages, every test suite (incl. real-TeX tests and the corpus with SANDBOX=none), web build
+#   sandbox  as root, in the production TeX Live image: the real uid sandbox tests and the corpus with SANDBOX=uid
+#   docker   build both images (medium TeX Live), start the compose stack, compile through the API, check the PDF
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # A small TeX Live from Ubuntu (TL 2023 on 24.04): enough for pdf/xe/lualatex, bibtex/biber and the corpus.
+  # The runners are pinned to ubuntu-24.04 (not -latest), so the TeX Live year under the `test` job only
+  # changes on purpose (kpathsea's read restrictions differ between TL 2023 and TL 2026).
+  TEX_PACKAGES: >-
+    latexmk texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
+    texlive-luatex texlive-xetex texlive-bibtex-extra biber lmodern
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install TeX Live (apt)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends $TEX_PACKAGES
+          latexmk -v | sed -n 2p
+
+      # Each project has its own TEXMFVAR, so without a system-wide font cache every lualatex project
+      # would build its own (slow) luaotfload database.
+      - name: Pre-generate the LuaTeX font cache
+        run: sudo env TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force || echo "::warning::luaotfload-tool failed; lualatex tests will be slower"
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # CI=true (set by GitHub) makes tests that need TeX / POSIX fail instead of skipping
+      # (apps/compiler/test/ciPrerequisites.test.ts, corpus.test.ts).
+      - name: Tests
+        run: npm test
+
+      - name: Web build
+        run: npm run build -w @ligature/web
+
+  # Runs in the production TeX Live (the compiler image's base, medium scheme) as root, so the corpus sees
+  # the same kpathsea/LuaTeX as production: TeX Live 2026 no longer applies openin_any to reading.
+  sandbox:
+    name: sandbox (uid, root) + malicious-TeX corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Tools
+        run: |
+          id -u
+          command -v prlimit setpriv namei || { apt-get update -q && apt-get install -y -q --no-install-recommends util-linux; }
+          latexmk -v | sed -n 2p
+          pdftex --version | sed -n 1p
+          prlimit --version
+
+      # As in the compiler image (Dockerfile.compiler): without a system-wide font cache every lualatex
+      # project of the corpus (cases 4, 8, 9, 10) would build its own luaotfload database.
+      - name: Pre-generate the LuaTeX font cache
+        run: |
+          TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force
+          chmod -R a+rX "$(kpsewhich -var-value=TEXMFSYSVAR)"
+
+      - run: npm ci --no-audit --no-fund
+
+      # The per-project helper runs as uid >= 100000 and loads apps/compiler/src from the checkout.
+      - name: Make the checkout readable by unprivileged uids
+        run: |
+          d="$GITHUB_WORKSPACE"
+          while [ "$d" != "/" ]; do chmod o+x "$d"; d="$(dirname "$d")"; done
+          chmod -R o+rX "$GITHUB_WORKSPACE"
+          namei -l "$GITHUB_WORKSPACE/apps/compiler/src/helper.ts"
+
+      # Like the production compiler container (docker/compose.yaml: read-only root, /tmp 0700, ipc none): no
+      # world-writable directory that a document could climb into with lfs.chdir("..") (corpus case 4, which
+      # fails on a write there with CORPUS_NO_WORLD_WRITABLE=1). The tests' own temp dirs go to a 0755 directory.
+      - name: Remove world-writable directories (like production)
+        run: |
+          mkdir -p -m 0755 /srv/ligature-tmp
+          for d in /tmp /var/tmp /dev/shm; do
+            if [ -d "$d" ]; then chmod 0700 "$d"; fi
+          done
+          ls -ld /tmp /var/tmp /dev/shm /srv/ligature-tmp || true
+
+      # As root: test/ciPrerequisites, test/uidSandbox and test/corpus with SANDBOX=uid.
+      # Missing prerequisites fail; nothing skips. Known gaps of the corpus show up as warnings.
+      - name: uid sandbox tests and corpus (SANDBOX=uid, as root)
+        env:
+          TMPDIR: /srv/ligature-tmp
+          CORPUS_NO_WORLD_WRITABLE: '1'
+        run: bash scripts/ci/compiler-sandbox-tests.sh
+
+  docker:
+    name: docker (compose stack, API smoke test)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      COMPOSE_FILE: docker/compose.yaml
+      COMPOSE_ENV_FILES: scripts/ci/compose.ci.env
+      COMPOSE_PROJECT_NAME: ligature-ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check that the pinned TeX Live images still exist
+        run: |
+          set -euo pipefail
+          default="$(sed -n 's/^ARG TEXLIVE_IMAGE=//p' docker/Dockerfile.compiler)"
+          ci="$(sed -n 's/^LIGATURE_TEXLIVE_IMAGE=//p' scripts/ci/compose.ci.env)"
+          for img in "$default" "$ci"; do
+            echo "== $img"
+            docker buildx imagetools inspect "$img" | sed -n 1,4p
+            echo "-- tag ${img%@*} currently:"
+            docker buildx imagetools inspect "${img%@*}" | sed -n 1,3p
+          done
+
+      - name: Build the images (compiler with the medium scheme)
+        run: docker compose build
+
+      - name: Start the stack and wait until healthy
+        run: docker compose up -d --wait --wait-timeout 300
+
+      - name: Smoke test through the API (signup, project, upload, compile, PDF, CLI)
+        run: SMOKE_CLI=1 LIGATURE_ORIGIN=http://localhost:3000 bash scripts/ci/smoke.sh http://127.0.0.1:3000
+
+      - name: Logs
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=300
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,7 @@
+% Case 12: this content is uploaded under hostile main-file names (see names.json). Expected: each name
+% is rejected before anything is spawned (200 failure with an explanation, or 400 for paths the worker
+% never accepts), the project directory is not even created, and no marker appears.
+\documentclass{article}
+\begin{document}
+Hostile name.
+\end{document}

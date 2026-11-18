@@ -1,32 +1,7 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import type { ChildProcess } from 'node:child_process'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fileDocName, metaDocName } from '@ligature/shared'
-import { connect, demoProject, getJson, killHard, login, ORIGIN, sleep, startServer, tempDataDir, waitFor, type RunningServer } from './harness.ts'
-
-const COMPILER_DIR = resolve(import.meta.dirname, '../../compiler')
-const HAS_LATEXMK = spawnSync('latexmk', ['-v'], { shell: process.platform === 'win32' }).status === 0
-
-async function startCompiler(port: number): Promise<ChildProcess> {
-  const proc = spawn(process.execPath, ['src/worker.ts'], {
-    cwd: COMPILER_DIR,
-    env: { ...process.env, NODE_ENV: 'development', COMPILER_LISTEN: `tcp:127.0.0.1:${port}`, SANDBOX: 'none',
-      BUILDS_DIR: mkdtempSync(join(tmpdir(), 'ligature-builds-')) },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  let out = ''
-  proc.stdout!.on('data', d => { out += d }); proc.stderr!.on('data', d => { out += d })
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    if (proc.exitCode !== null) throw new Error(`compiler exited:\n${out}`)
-    try { if ((await fetch(`http://127.0.0.1:${port}/healthz`)).ok) return proc } catch { /* not up */ }
-    await sleep(100)
-  }
-  proc.kill('SIGKILL')
-  throw new Error(`compiler did not start:\n${out}`)
-}
+import { connect, demoProject, getJson, HAS_LATEXMK, killHard, login, ORIGIN, startCompiler, startServer, tempDataDir, waitFor, type RunningServer } from './harness.ts'
 
 describe('presence identity is stamped by the server', () => {
   let s: RunningServer

@@ -1,0 +1,7 @@
+% Case 4: escaping through LuaTeX's Lua (lualatex). The probes live in probe.lua; each logs
+% "CORPUS-PROBE <label>: <result>" without ever printing what it read.
+\documentclass{article}
+\directlua{dofile("probe.lua")}
+\begin{document}
+Lua probes done.
+\end{document}

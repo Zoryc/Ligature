@@ -1,0 +1,8 @@
+#!/bin/sh
+# `ligature <command>`: the operator CLI (apps/server/src/cli.ts), installed as /usr/local/bin/ligature
+# in the app image. Run it inside the app container, e.g.
+#   docker compose -f docker/compose.yaml exec app ligature backup /data/backups
+#   docker compose -f docker/compose.yaml exec app ligature reset-password alice      (asks, no echo)
+#   printf '%s\n' "$PW" | docker compose -f docker/compose.yaml exec -T app ligature create-admin root
+# Relative paths are relative to the current directory (tsx keeps it); DATA_DIR comes from the image.
+exec /app/node_modules/.bin/tsx /app/apps/server/src/cli.ts "$@"

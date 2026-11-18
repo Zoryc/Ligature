@@ -1,0 +1,7 @@
+% Case 9a: a fork bomb from Lua (lualatex). os.execute/io.popen/os.spawn need shell escape (off), so
+% every attempt must fail; the log counts how many processes were started (must be 0).
+\documentclass{article}
+\directlua{dofile("fork.lua")}
+\begin{document}
+Fork attempts done.
+\end{document}

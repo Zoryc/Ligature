@@ -7,16 +7,20 @@
 # them directly (type stripping, Node >= 24).
 
 # --- TeX Live base image -------------------------------------------------------------------------
-# PINNED, BUT THE EXACT TAG MUST BE VERIFIED (PLAN section 11, "Unverified, to confirm in M0"):
-# check the tag list of texlive/texlive on Docker Hub (mirror of registry.gitlab.com/islandoftex/images/texlive)
-# and replace this with the real TL2026 full-scheme tag WITHOUT docs/sources, ideally pinned by digest:
-#   ARG TEXLIVE_IMAGE=texlive/texlive:<TL2026 tag>@sha256:<digest>
-# For a small VPS build the "compiler:tl2026-medium" variant of the PLAN from this same file with a
-# medium-scheme tag (roughly 1-2 GB instead of 4-5 GB; tag also to be verified), e.g.
-#   docker build -f docker/Dockerfile.compiler --build-arg TEXLIVE_IMAGE=texlive/texlive:<TL2026 medium tag> \
+# Island of TeX images (texlive/texlive on Docker Hub, built from registry.gitlab.com/islandoftex/images/texlive,
+# Debian testing based). Tags verified on Docker Hub on 2026-11-18:
+#   - there are NO "TL2026-*" tags: the current release (TeX Live 2026) is published as "latest-<scheme>"
+#     and rebuilt weekly; a year only gets "TL<year>-historic" tags once the next release is out;
+#   - "latest" = "latest-full" (full scheme, no docs/sources, about 2.8 GB compressed);
+#   - "latest-medium" (medium scheme, about 0.9 GB compressed) is the small-VPS / CI variant.
+# The tags move, so the default is pinned by digest (multi-arch index; amd64 and arm64) for reproducible builds.
+# To update: docker buildx imagetools inspect texlive/texlive:latest-full   (take the index digest).
+# Medium variant (the PLAN's "compiler:tl2026-medium"):
+#   docker build -f docker/Dockerfile.compiler \
+#     --build-arg TEXLIVE_IMAGE=texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee \
 #     -t ligature-compiler:tl2026-medium .
-# or set LIGATURE_TEXLIVE_IMAGE when using docker/compose.yaml.
-ARG TEXLIVE_IMAGE=texlive/texlive:TL2026-full
+# or set LIGATURE_TEXLIVE_IMAGE when using docker/compose.yaml (see docker/.env.example).
+ARG TEXLIVE_IMAGE=texlive/texlive:latest-full@sha256:c21636aa13e86716d15dab4e352356cb0d34f9365d6091db066e5df71041d67b
 ARG NODE_IMAGE=node:24-bookworm-slim
 
 FROM ${NODE_IMAGE} AS node

@@ -1,0 +1,7 @@
+% Case 3b: piped input (\input|"cmd") also needs shell escape. Expected: not run; the run aborts
+% because the "file" cannot be opened (status failure), and @PWNED@ is not created.
+\documentclass{article}
+\begin{document}
+Piped input attempt.
+\input|"touch @PWNED@"
+\end{document}

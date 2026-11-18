@@ -77,7 +77,7 @@ export class DocStore {
   /** Write all buffered updates in one transaction. Synchronous. */
   flush(): void {
     if (this.timer) { clearTimeout(this.timer); this.timer = null }
-    if (this.buffer.length === 0) return
+    if (this.buffer.length === 0 || !this.db.open) return
     const batch = this.buffer
     this.buffer = []
     this.db.transaction(() => {

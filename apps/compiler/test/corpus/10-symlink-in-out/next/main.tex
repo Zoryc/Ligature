@@ -1,0 +1,9 @@
+% Case 10, build 2 (pdflatex) of the same project: an ordinary document with a page and an \include,
+% compiled while the links planted by build 1 are still in out/ (out/chapters points outside).
+% Expected: nothing is written through the links (uid mode: the targets are not writable by the project uid),
+% nothing outside is served, and the worker stays healthy.
+\documentclass{article}
+\begin{document}
+Second build.
+\include{chapters/one}
+\end{document}

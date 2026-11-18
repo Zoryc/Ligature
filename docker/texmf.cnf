@@ -7,6 +7,9 @@
 shell_escape = f
 
 % Paranoid: no dot files, no parent directories, no absolute paths (outside TEXMFOUTPUT).
+% NOTE: since TeX Live 2026, kpathsea applies this to WRITING only; openin_any is ignored for reading
+% (tex-file.c: reading is always allowed). Kept for older TeX Live years. Reading is bounded only by the
+% uid sandbox: a document can read world-readable files of this image (see apps/compiler/test/corpus/README.md).
 openin_any = p
 openout_any = p
 

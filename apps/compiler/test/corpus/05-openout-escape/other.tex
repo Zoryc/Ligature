@@ -1,0 +1,9 @@
+% Case 5c: \openout into another project's sources (absolute path). Expected: refused.
+\documentclass{article}
+\newwrite\evil
+\begin{document}
+Writing.
+\immediate\openout\evil=@BUILDS@/@OTHER@/src/evil.tex
+\immediate\write\evil{pwned}
+\immediate\closeout\evil
+\end{document}

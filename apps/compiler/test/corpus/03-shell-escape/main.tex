@@ -1,0 +1,11 @@
+% Case 3: shell escape. @PWNED@ is a path in a world-writable directory (like /tmp); @PWNED_TMP@ is
+% under the real /tmp on POSIX. Expected: shell_escape=f, so nothing runs; TeX logs
+% "runsystem(...)...disabled" and the document still builds (status success).
+\documentclass{article}
+\begin{document}
+Shell escape attempts.
+\immediate\write18{touch @PWNED@}
+\immediate\write18{echo pwned > @PWNED@}
+\immediate\write18{touch @PWNED_TMP@}
+\write18{touch @PWNED@}
+\end{document}

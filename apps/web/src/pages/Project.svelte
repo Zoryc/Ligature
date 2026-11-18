@@ -1,20 +1,25 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import { can, type Me, type MetaEvent, type ProjectDetail, type TreeEntry } from '@ligature/shared'
-  import { api, ApiError, buildFileUrl, buildHasPdf, fetchBuildLog, type BuildResult } from '../lib/api.ts'
+  import { api, ApiError, buildFileUrl, buildHasPdf, fetchBuildLog, rawFileUrl, type BuildResult } from '../lib/api.ts'
   import { ProjectCollab, type ConnectionStatus, type FileSession, type PresenceUser } from '../lib/collab.ts'
   import { userColor } from '../lib/colors.ts'
   import { treeRows, textFilesByPath } from '../lib/tree.ts'
+  import { entryPath, isInlineImage, openFileOutcome } from '../lib/treeOps.ts'
+  import { authFailedActions, closeActions, metaEventActions, resyncActions, type ProjectAction } from '../lib/projectEvents.ts'
   import { BehindTracker } from '../lib/behind.ts'
   import { BuildEvents } from '../lib/buildEvents.ts'
   import type { LogInfo } from '../lib/logParse.ts'
+  import { errorMessage } from '../lib/errors.ts'
   import { toast } from '../lib/toasts.svelte.ts'
   import { go } from '../lib/router.svelte.ts'
-  import { logout } from '../lib/session.svelte.ts'
+  import { loadMe, logout } from '../lib/session.svelte.ts'
   import FileTree from '../lib/FileTree.svelte'
   import Editor from '../lib/Editor.svelte'
   import PdfView from '../lib/PdfView.svelte'
   import LogPanel from '../lib/LogPanel.svelte'
+  import SettingsPanel from '../lib/SettingsPanel.svelte'
+  import MembersPanel from '../lib/MembersPanel.svelte'
 
   interface Props { id: string; me: Me }
   let { id, me }: Props = $props()
@@ -24,12 +29,16 @@
   let loadError = $state<string | null>(null)
   let status = $state<ConnectionStatus>('connecting')
   let peers = $state.raw<PresenceUser[]>([])
-  let metaError = $state<string | null>(null)
+  let panel = $state<'none' | 'settings' | 'members'>('none')
+  let membersPanel = $state<ReturnType<typeof MembersPanel> | undefined>(undefined)
 
-  // Open file
+  // Open file (text, in the editor) or preview (image)
   let file = $state.raw<FileSession | null>(null)
   let fileReady = $state(false)
   let fileError = $state<string | null>(null)
+  /** Informational message in the editor pane (e.g. "the file was deleted"). */
+  let fileNotice = $state<string | null>(null)
+  let preview = $state.raw<TreeEntry | null>(null)
   let editor = $state.raw<ReturnType<typeof Editor> | undefined>(undefined)
   let pendingJump: number | null = null
 
@@ -49,20 +58,15 @@
   let byPath = $derived(textFilesByPath(rows))
   let canEdit = $derived(detail ? can.edit(detail.role) : false)
   let canCompile = $derived(detail ? can.compile(detail.role) : false)
-  let openPath = $derived(file ? rows.find(r => r.entry.id === file?.fileId)?.path ?? '' : '')
+  let openPath = $derived.by(() => {
+    const shownId = file?.fileId ?? preview?.id
+    return detail && shownId ? entryPath(detail.tree, shownId) ?? '' : ''
+  })
 
   let collab: ProjectCollab | null = null
   let destroyed = false
-
-  function authMessage(reason: string): string {
-    switch (reason) {
-      case 'reload-required': return 'This file was reset on the server. Reload the page.'
-      case 'forbidden': return 'You do not have access to this project (any more).'
-      case 'not-found': return 'This file no longer exists.'
-      case 'unauthenticated': return 'Your session has expired. Log in again.'
-      default: return `Access denied (${reason}).`
-    }
-  }
+  /** Set once we are on our way out (project deleted / access lost): no more notices. */
+  let leaving = false
 
   onMount(() => {
     void (async () => {
@@ -70,7 +74,7 @@
       try {
         d = await api.project(id)
       } catch (e) {
-        loadError = e instanceof ApiError && e.status === 404 ? 'Project not found.' : `Could not load project: ${(e as Error).message}`
+        loadError = e instanceof ApiError && e.status === 404 ? 'Project not found, or you are not a member.' : `Could not load the project: ${errorMessage(e)}`
         return
       }
       if (destroyed) return
@@ -80,7 +84,10 @@
         onStatus: s => { status = s },
         onPeers: p => { peers = p },
         onEvent: handleEvent,
-        onAuthFailed: reason => { metaError = authMessage(reason) },
+        // Also after a socket outage: MetaEvents sent meanwhile are lost, so refetch the project (and members).
+        onSynced: () => { if (!leaving) runActions(resyncActions({ membersOpen: panel === 'members' })) },
+        onAuthFailed: reason => runActions(authFailedActions(reason, 'meta')),
+        onClosed: reason => runActions(closeActions(reason, 'meta')),
       })
       const main = d.tree.find(e => e.id === d.mainFileId && e.kind === 'text')
       const first = main ?? treeRows(d.tree, d.rootId).find(r => r.entry.kind === 'text')?.entry
@@ -116,8 +123,30 @@
     editor = undefined
   }
 
+  /** Click in the tree: text opens in the editor, inline images preview, anything else downloads. */
+  function openEntry(entry: TreeEntry) {
+    if (entry.kind === 'text') openFile(entry)
+    else if (entry.kind === 'binary') {
+      if (isInlineImage(entry.name)) {
+        closeFile()
+        fileError = null
+        fileNotice = null
+        preview = entry
+      } else {
+        const a = document.createElement('a')
+        a.href = rawFileUrl(id, entry.id)
+        a.download = entry.name
+        document.body.append(a)
+        a.click()
+        a.remove()
+      }
+    }
+  }
+
   function openFile(entry: TreeEntry, jumpTo: number | null = null) {
     if (!collab || entry.kind !== 'text' || entry.epoch === undefined) return
+    preview = null
+    fileNotice = null
     if (file && file.fileId === entry.id && file.epoch === entry.epoch) {
       if (jumpTo !== null) {
         pendingJump = jumpTo
@@ -137,13 +166,20 @@
         }
         updateBehind()
       },
-      onAuthFailed: reason => {
-        if (file === s) fileError = authMessage(reason)
-      },
+      onAuthFailed: reason => { if (file === s) runActions(authFailedActions(reason, 'file')) },
+      onClosed: reason => { if (file === s) runActions(closeActions(reason, 'file')) },
     })
     s.doc.on('update', onDocUpdate)
     file = s
     updateBehind()
+  }
+
+  /** Open the current entry of the open file again in a fresh session (its epoch changed). */
+  function reopenFile() {
+    if (!file || !detail) return
+    const entry = detail.tree.find(e => e.id === file?.fileId)
+    closeFile()
+    if (entry) openFile(entry)
   }
 
   function applyPendingJump() {
@@ -169,28 +205,181 @@
     openFile(entry, line)
   }
 
-  async function refreshTree() {
-    let d: ProjectDetail
+  // ---------- project state ----------
+
+  function leave(notice: string) {
+    if (leaving || destroyed) return
+    leaving = true
+    toast(notice, 'error', 6000)
+    go('/projects')
+  }
+
+  /** null on a transient error, 'gone' when the project is deleted or we are no longer a member. */
+  async function fetchProject(): Promise<ProjectDetail | 'gone' | null> {
     try {
-      d = await api.project(id)
+      return await api.project(id)
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) {
-        toast('You no longer have access to this project.', 'error')
-        go('/projects')
-      }
+      if (e instanceof ApiError && e.status === 404) return 'gone'
+      if (!(e instanceof ApiError && e.status === 401)) console.error('could not refresh the project', e)
+      return null
+    }
+  }
+
+  /** Show a new project state; deal with the open file/preview having been deleted, reset or re-roled. */
+  function applyDetail(d: ProjectDetail) {
+    const roleChanged = detail !== null && detail.role !== d.role
+    detail = d
+    if (preview && !d.tree.some(e => e.id === preview?.id && e.kind === 'binary')) {
+      fileNotice = `"${preview.name}" was deleted.`
+      preview = null
+    }
+    if (!file) return
+    const outcome = openFileOutcome(d.tree, file.fileId, file.epoch)
+    if (outcome === 'deleted') {
+      const name = openPath || 'The open file'
+      closeFile()
+      fileNotice = `"${name}" was deleted.`
+      toast(fileNotice)
+    } else if (outcome === 'reopen') {
+      toast('This file was reset on the server; reopening it.')
+      reopenFile()
+    } else if (roleChanged) {
+      // The server sets read-only per connection at authentication (and closed us): re-authenticate.
+      file.reconnect()
+    }
+  }
+
+  let refreshRunning = false
+  let refreshQueued = false
+
+  /** Refetch the project (coalesced: at most one request in flight, one queued). */
+  async function refreshProject(): Promise<void> {
+    if (refreshRunning) {
+      refreshQueued = true
       return
     }
-    if (destroyed) return
-    detail = d
-    if (!file) return
-    const entry = d.tree.find(e => e.id === file?.fileId)
-    if (!entry || entry.kind !== 'text') {
-      closeFile()
-      fileError = 'This file was deleted.'
-    } else if (entry.epoch !== file.epoch) {
-      toast('This file was reset on the server; reopening it.')
-      openFile(entry)
+    refreshRunning = true
+    try {
+      do {
+        refreshQueued = false
+        const r = await fetchProject()
+        if (destroyed) return
+        if (r === 'gone') return leave('You no longer have access to this project.')
+        if (r) applyDetail(r)
+      } while (refreshQueued)
+    } finally {
+      refreshRunning = false
     }
+  }
+
+  let rechecking = false
+
+  async function recheckAccess(notice: string, leaveMsg: string) {
+    if (rechecking || leaving) return
+    rechecking = true
+    try {
+      const r = await fetchProject()
+      if (destroyed) return
+      if (r === 'gone') return leave(leaveMsg)
+      if (!r) return
+      const before = detail?.role
+      applyDetail(r)
+      toast(before && before !== r.role ? `${notice} You are now ${r.role}.` : notice)
+      collab?.reconnectMeta()
+      file?.reconnect()
+    } finally {
+      rechecking = false
+    }
+  }
+
+  async function sessionLost(notice: string) {
+    if (leaving) return
+    leaving = true
+    toast(notice, 'error', 6000)
+    await loadMe() // no session any more: the app shows the login page
+    if (!destroyed) leaving = false
+  }
+
+  function runActions(actions: ProjectAction[]) {
+    for (const a of actions) {
+      switch (a.type) {
+        case 'refresh-project':
+          void refreshProject()
+          break
+        case 'drop-peer':
+          collab?.dropPeer(a.userId)
+          break
+        case 'refresh-members':
+          void membersPanel?.reload()
+          break
+        case 'compile-finished':
+          if (buildEvents.onEvent({ buildId: a.buildId, status: a.status }) === 'show') {
+            toast(`A collaborator compiled (${a.status}).`)
+            void showForeignBuild(a.buildId, a.status)
+          }
+          break
+        case 'recheck-access':
+          void recheckAccess(a.notice, a.leave)
+          break
+        case 'leave':
+          leave(a.notice)
+          break
+        case 'session-lost':
+          void sessionLost(a.notice)
+          break
+        case 'reconnect':
+          toast(a.notice)
+          collab?.reconnectMeta()
+          file?.reconnect()
+          void refreshProject()
+          break
+        case 'file-gone':
+          if (file) {
+            const name = openPath
+            closeFile()
+            fileNotice = name ? `"${name}" was deleted.` : a.notice
+            toast(a.notice)
+            void refreshProject()
+          }
+          break
+        case 'file-reconnect':
+          file?.reconnect()
+          break
+        case 'file-reload':
+          void refreshProject()
+          break
+      }
+    }
+  }
+
+  function handleEvent(e: MetaEvent) {
+    if (!detail || leaving) return
+    runActions(metaEventActions(e, { meId: me.id, treeVersion: detail.treeVersion, membersOpen: panel === 'members' }))
+  }
+
+  /**
+   * Log out from this page. Tear the collaboration socket down first: the server closes this session's
+   * sockets with 'session-ended', which must not be reported as a lost session (or redirect back here).
+   */
+  async function logOutHere() {
+    leaving = true
+    closeFile()
+    collab?.destroy()
+    collab = null
+    await logout()
+  }
+
+  async function setMainFile(fileId: string) {
+    try {
+      applyDetail(await api.updateProject(id, { mainFileId: fileId }))
+      toast('Main file changed.')
+    } catch (e) {
+      toast(`Could not set the main file: ${errorMessage(e)}`, 'error')
+    }
+  }
+
+  function togglePanel(p: 'settings' | 'members') {
+    panel = panel === p ? 'none' : p
   }
 
   // ---------- builds ----------
@@ -237,9 +426,9 @@
     } catch (e) {
       const held = buildEvents.failed()
       if (destroyed) return
-      const msg = e instanceof ApiError
-        ? (e.code === 'compiler-unavailable' ? `Compiler unavailable: ${e.message}` : `Compile failed: ${e.code}`)
-        : `Compile failed: ${(e as Error).message}`
+      const msg = e instanceof ApiError && e.code === 'compiler-unavailable'
+        ? `Compiler unavailable: ${e.message}`
+        : `Compile failed: ${errorMessage(e)}`
       logInfo = { status: 'error', durationMs: null, log: msg }
       toast(msg, 'error')
       // A collaborator's build that finished meanwhile is now the newest: show it.
@@ -253,25 +442,6 @@
     }
   }
 
-  function handleEvent(e: MetaEvent) {
-    switch (e.type) {
-      case 'tree-changed':
-        if (!detail || e.treeVersion !== detail.treeVersion) void refreshTree()
-        break
-      case 'compile-finished':
-        if (buildEvents.onEvent(e) === 'show') {
-          toast(`A collaborator compiled (${e.status}).`)
-          void showForeignBuild(e.buildId, e.status)
-        }
-        break
-      case 'access-revoked':
-        if (e.userId === me.id) {
-          toast('Your access to this project was revoked.', 'error')
-          go('/projects')
-        }
-        break
-    }
-  }
 </script>
 
 {#if loadError}
@@ -286,7 +456,7 @@
     <header class="topbar">
       <a href="#/projects" title="All projects">&larr;</a>
       <strong>{detail.name}</strong>
-      <span class="pill">{detail.role}</span>
+      <span class="pill" title="Your role in this project">{detail.role}</span>
       <span class="conn conn-{status}" title="Connection to the collaboration server">{status}</span>
       <span class="peers">
         {#each peers as p (p.id)}
@@ -301,23 +471,32 @@
         title={canCompile ? 'Compile (Ctrl+S)' : 'Viewers cannot compile'}>
         {compiling ? 'Compiling…' : 'Recompile'}
       </button>
+      <button type="button" class:active={panel === 'settings'} onclick={() => togglePanel('settings')}>Settings</button>
+      <button type="button" class:active={panel === 'members'} onclick={() => togglePanel('members')}>Members</button>
       <span class="muted">{me.displayName}</span>
-      <button type="button" onclick={logout}>Log out</button>
+      <button type="button" onclick={logOutHere}>Log out</button>
     </header>
 
-    {#if metaError}<div class="banner">{metaError} <button type="button" onclick={() => location.reload()}>Reload</button></div>{/if}
-
     <aside class="files">
-      <FileTree {rows} selectedId={file?.fileId ?? null} mainFileId={detail.mainFileId} onOpen={e => openFile(e)} />
+      <FileTree projectId={id} tree={detail.tree} rootId={detail.rootId} mainFileId={detail.mainFileId} {canEdit}
+        openId={file?.fileId ?? preview?.id ?? null} onOpen={openEntry} onChanged={() => void refreshProject()}
+        onSetMain={setMainFile} />
     </aside>
 
     <section class="editor-pane">
-      <div class="pane-title">{openPath || 'No file open'}{#if !canEdit}<span class="muted"> (read-only)</span>{/if}</div>
+      <div class="pane-title">
+        {openPath || 'No file open'}{#if file && !canEdit}<span class="muted"> (read-only)</span>{/if}
+        {#if preview}<a class="dl" href={rawFileUrl(id, preview.id)} download={preview.name}>Download</a>{/if}
+      </div>
       <div class="pane-body">
         {#if fileError}
           <div class="message">
             <p class="error">{fileError}</p>
             <button type="button" onclick={() => location.reload()}>Reload</button>
+          </div>
+        {:else if preview}
+          <div class="preview">
+            <img src="{rawFileUrl(id, preview.id, true)}&v={detail.treeVersion}" alt={preview.name} />
           </div>
         {:else if file && fileReady}
           {#key file}
@@ -329,7 +508,10 @@
         {:else if file}
           <div class="message muted">Loading file…</div>
         {:else}
-          <div class="message muted">Pick a file on the left.</div>
+          <div class="message">
+            {#if fileNotice}<p class="notice">{fileNotice}</p>{/if}
+            <p class="muted">Pick a file on the left.</p>
+          </div>
         {/if}
       </div>
     </section>
@@ -342,6 +524,20 @@
         <LogPanel info={logInfo} onJump={jumpTo} />
       </div>
     </section>
+
+    {#if panel !== 'none'}
+      <aside class="side-panel" aria-label={panel === 'settings' ? 'Project settings' : 'Members'}>
+        <div class="side-head">
+          <strong>{panel === 'settings' ? 'Project settings' : 'Members'}</strong>
+          <button type="button" onclick={() => { panel = 'none' }}>Close</button>
+        </div>
+        {#if panel === 'settings'}
+          <SettingsPanel {detail} onUpdated={applyDetail} />
+        {:else}
+          <MembersPanel bind:this={membersPanel} projectId={id} projectName={detail.name} {me} role={detail.role} />
+        {/if}
+      </aside>
+    {/if}
   </div>
 {/if}
 
@@ -349,12 +545,12 @@
   .layout {
     height: 100vh;
     display: grid;
-    grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       'top top top'
-      'banner banner banner'
       'files editor output';
+    position: relative;
   }
   .topbar {
     grid-area: top;
@@ -367,12 +563,7 @@
     flex-wrap: wrap;
   }
   .topbar a { text-decoration: none; font-size: 18px; }
-  .banner {
-    grid-area: banner;
-    background: #fdecee;
-    color: #b00020;
-    padding: 6px 10px;
-  }
+  .topbar button.active { background: #dde4ff; }
   .spacer { flex: 1; }
   .pill {
     font-size: 12px;
@@ -420,11 +611,21 @@
     padding: 4px 8px;
     border-bottom: 1px solid #ddd;
     background: #fafafa;
+    display: flex;
+    gap: 8px;
   }
+  .pane-title .dl { margin-left: auto; }
   .pane-body {
     flex: 1;
     min-height: 0;
+    overflow: auto;
   }
+  .preview {
+    padding: 12px;
+    background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+    min-height: 100%;
+  }
+  .preview img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
   .output {
     grid-area: output;
     display: flex;
@@ -440,17 +641,27 @@
     min-height: 80px;
     border-top: 1px solid #ccc;
   }
+  .side-panel {
+    position: absolute;
+    top: 42px;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 100vw);
+    background: white;
+    border-left: 1px solid #bbb;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
+    padding: 10px 14px;
+    overflow: auto;
+    z-index: 50;
+  }
+  .side-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
   .message { padding: 16px; }
-  .muted { color: #666; }
-  .error { color: #b00020; }
-  .primary {
-    background: #2a5bd7;
-    color: white;
-    border: 1px solid #2a5bd7;
-  }
-  .primary:hover:not(:disabled) {
-    background: #1f48b0;
-  }
+  .notice { color: #a15c00; }
   .primary:disabled {
     background: #9db3e8;
     border-color: #9db3e8;
