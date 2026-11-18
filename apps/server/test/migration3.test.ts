@@ -51,7 +51,7 @@ describe('migration 3 (trash) on an M1 database', () => {
     legacyDb(dataDir, t0)
     const ts = await startTestServer(39280, { dataDir }); servers.push(ts)
     const db = ts.lig.db
-    expect(db.pragma('user_version', { simple: true })).toBe(3)
+    expect(db.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(3) // and later migrations
     const rows = Object.fromEntries((db.prepare('SELECT id, delete_batch AS b, deleted_by AS by FROM files WHERE project_id = ?').all(P) as
       { id: string; b: string | null; by: string | null }[]).map(r => [r.id, [r.b, r.by]]))
     expect(rows).toEqual({

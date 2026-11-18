@@ -165,6 +165,9 @@ export async function importProject(s: Services, user: SessionUser, rawName: str
         batch.push([fileDocName(projectId, id, 1), DocStore.prepareSeed(f.cls.text)])
         batchBytes += f.bytes.byteLength
         if (batchBytes >= DOC_BATCH_BYTES) flush()
+        // The import version (docs/M3.md §1) stores texts as blobs: write them now, with async I/O.
+        const utf8 = Buffer.from(f.cls.text, 'utf8')
+        await s.blobs.write(utf8, BlobStore.hashOf(utf8))
       } else {
         const hash = BlobStore.hashOf(f.bytes)
         await s.blobs.write(f.bytes, hash)
@@ -213,5 +216,9 @@ export async function importProject(s: Services, user: SessionUser, rawName: str
     }
     throw e
   }
+  // History starts with the imported state (its text blobs are already on disk: only rows are written).
+  try {
+    s.history.takeVersion(projectId, 'import', { createdBy: user.id })
+  } catch (e) { console.error('[import] could not take the import version', e) }
   return { project: projectDetail(s.db, projectId, 'owner')!, report: plan.report }
 }

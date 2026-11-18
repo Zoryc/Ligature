@@ -26,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   'compiler-busy': 'The compiler is busy with other builds. Try again in a moment.',
   'no-build': 'This project has not been compiled yet.',
   'bad-zip': 'This file is not a usable zip archive.',
+  'content-missing': 'Some content of that version is missing on the server, so it cannot be restored.',
   'network': 'Cannot reach the server. Check your connection and try again.',
 }
 

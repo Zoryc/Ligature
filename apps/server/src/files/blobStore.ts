@@ -1,15 +1,31 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeSync } from 'node:fs'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DB } from '../db/index.ts'
 
 const HASH_RE = /^[0-9a-f]{64}$/
 
+/** Refresh an existing file's mtime (synchronously). False if it does not exist. */
+function touch(path: string): boolean {
+  try {
+    const now = new Date()
+    utimesSync(path, now, now)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Content-addressed blob store: `<dir>/ab/cdef…` (sha256 hex), recorded in the `blobs` table.
  * Writes go to a temp file in the target directory, are fsynced, then renamed into place,
- * so a blob file either exists complete or not at all. No GC in M1.
+ * so a blob file either exists complete or not at all.
+ *
+ * Garbage collection (docs/M3.md §3, maintenance/blobSweep.ts) spares blobs written in the last 24 h, by
+ * `blobs.created_at` and by file mtime. Writing a blob that already exists refreshes its mtime
+ * synchronously ("touch"), so a writer about to reference an old, unreferenced blob is protected by the
+ * grace period too; if the file vanished meanwhile, it is written again.
  */
 export class BlobStore {
   constructor(private readonly db: DB, readonly dir: string) {
@@ -31,8 +47,18 @@ export class BlobStore {
 
   /** Store `data` (idempotent). Returns its sha256. `hash` may be passed if already computed. */
   put(data: Uint8Array, hash: string = BlobStore.hashOf(data)): string {
+    this.writeSync(data, hash)
+    this.record(hash, data.byteLength)
+    return hash
+  }
+
+  /**
+   * The file half of `put` (synchronous; idempotent). The blob counts as stored only once `record` runs,
+   * so writers can record many blobs inside one transaction.
+   */
+  writeSync(data: Uint8Array, hash: string): void {
     const final = this.pathOf(hash)
-    if (!existsSync(final)) {
+    if (!touch(final)) {
       const sub = join(this.dir, hash.slice(0, 2))
       mkdirSync(sub, { recursive: true })
       const tmp = join(sub, `.tmp-${randomBytes(8).toString('hex')}`)
@@ -54,8 +80,6 @@ export class BlobStore {
         try { fsyncSync(dfd) } finally { closeSync(dfd) }
       }
     }
-    this.record(hash, data.byteLength)
-    return hash
   }
 
   /**
@@ -64,7 +88,7 @@ export class BlobStore {
    */
   async write(data: Uint8Array, hash: string): Promise<void> {
     const final = this.pathOf(hash)
-    if (existsSync(final)) return
+    if (touch(final)) return // synchronous: the GC's check-and-delete cannot interleave with it
     const sub = join(this.dir, hash.slice(0, 2))
     await mkdir(sub, { recursive: true })
     const tmp = join(sub, `.tmp-${randomBytes(8).toString('hex')}`)

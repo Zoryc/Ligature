@@ -9,6 +9,7 @@
   import { displayNameProblem, passwordProblem, usernameProblem } from '../lib/validation.ts'
   import { adminUserActions } from '../lib/adminActions.ts'
   import NavBar from '../lib/NavBar.svelte'
+  import StorageSection from '../lib/StorageSection.svelte'
 
   const MODES: { value: RegistrationMode; label: string }[] = [
     { value: 'invite-only', label: 'Invite only: people sign up with a project invite link' },
@@ -198,6 +199,8 @@
         {#if cError}<p class="error" role="alert">{cError}</p>{/if}
       </form>
     </section>
+
+    <StorageSection />
   {/if}
 </main>
 

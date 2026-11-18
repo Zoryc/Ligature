@@ -313,8 +313,8 @@ describe('project events', () => {
   })
 
   it('refetches the project (and open member list) after the meta doc resyncs, e.g. after an outage', () => {
-    expect(resyncActions({ membersOpen: false })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-trash' }])
-    expect(resyncActions({ membersOpen: true })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-trash' }, { type: 'refresh-members' }])
+    expect(resyncActions({ membersOpen: false })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-trash' }, { type: 'refresh-versions' }])
+    expect(resyncActions({ membersOpen: true })).toEqual([{ type: 'refresh-project' }, { type: 'refresh-trash' }, { type: 'refresh-versions' }, { type: 'refresh-members' }])
   })
 
   it('maps authentication failures', () => {

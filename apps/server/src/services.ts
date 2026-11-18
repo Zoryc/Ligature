@@ -2,6 +2,7 @@ import type { DB } from './db/index.ts'
 import type { DocStore } from './collab/docStore.ts'
 import type { Collab } from './collab/collab.ts'
 import type { BlobStore } from './files/blobStore.ts'
+import type { History } from './history/history.ts'
 import { DEFAULT_ZIP_LIMITS, type ZipLimits } from './zip/reader.ts'
 
 export interface Limits {
@@ -35,6 +36,8 @@ export interface Services {
   collab: Collab
   blobs: BlobStore
   limits: Limits
+  /** Versions (docs/M3.md §1): change tracking, snapshots, the scheduler. */
+  history: History
 }
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/

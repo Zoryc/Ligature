@@ -8,6 +8,10 @@ export type AuditAction =
   | 'project-create' | 'project-delete' | 'file-delete'
   // M2 (names as in docs/M2.md §1)
   | 'file.restore' | 'file.purge' | 'trash.empty'
+  // M3 (docs/M3.md §2)
+  | 'version.create' | 'version.label' | 'version.restore'
+  // M3 (docs/M3.md §3–§5)
+  | 'doc.rebuild' | 'gc.run' | 'project.purge' | 'storage.view'
 
 export interface AuditEntry {
   actorId: string | null

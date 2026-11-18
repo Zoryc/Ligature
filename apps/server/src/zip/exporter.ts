@@ -44,7 +44,7 @@ export function exportItems(s: Services, projectId: string): ExportItem[] {
 /** Reads one item's bytes in slices; `next()` returns null at the end. */
 interface Source { next(): Uint8Array | null; close(): void }
 
-function textSource(s: Services, docName: string): Source {
+function textSource(s: Pick<Services, 'collab' | 'store'>, docName: string): Source {
   const live = s.collab.liveDoc(docName)
   let data: Buffer | null = Buffer.from(live ? live.getText(TEXT_KEY).toString() : s.store.storedText(docName)?.text ?? '', 'utf8')
   let off = 0
@@ -61,7 +61,7 @@ function textSource(s: Services, docName: string): Source {
   }
 }
 
-function blobSource(s: Services, hash: string): Source | null {
+function blobSource(s: Pick<Services, 'blobs'>, hash: string): Source | null {
   let fd: number | null
   try { fd = openSync(s.blobs.pathOf(hash), 'r') } catch { return null }
   let started = false
@@ -86,12 +86,26 @@ export interface ExportOptions {
   onDone?: () => void
   /** Called when the idle timeout fires (e.g. to destroy the connection). */
   onIdle?: () => void
+  /**
+   * A blob that vanished while streaming: skip the file (the live export, logged) or fail the stream, so
+   * the client never gets a zip that looks complete but is not (the zip of a version: all its files exist
+   * or none is served).
+   */
+  missingBlob?: 'skip' | 'fail'
 }
 
 /** A zip of the project as a pull-based stream. */
 export function exportZipStream(s: Services, projectId: string, opts: ExportOptions = {}): { name: string; stream: ReadableStream<Uint8Array> } {
   const project = getProject(s.db, projectId)
-  const items = exportItems(s, projectId)
+  return { name: exportFileName(project?.name ?? 'project'), stream: zipItemsStream(s, exportItems(s, projectId), opts) }
+}
+
+/**
+ * A zip of `items` (sorted by path) as a pull-based stream: one slice of one file in memory at a time.
+ * Also used for the zip of a version (docs/M3.md §7), whose files are all blobs.
+ */
+export function zipItemsStream(s: Pick<Services, 'collab' | 'store' | 'blobs'>, items: readonly ExportItem[],
+  opts: ExportOptions = {}): ReadableStream<Uint8Array> {
   let next = 0
   let zip: Zip
   let cur: { entry: ZipDeflate | ZipPassThrough; src: Source; pending: Uint8Array | null } | null = null
@@ -126,7 +140,12 @@ export function exportZipStream(s: Services, projectId: string, opts: ExportOpti
       const item = items[next++]
       if (!item) return false
       const src = 'docName' in item ? textSource(s, item.docName) : blobSource(s, item.blobHash)
-      if (!src) { console.error(`[export] blob ${'blobHash' in item ? item.blobHash : '?'} missing for ${item.path}`); continue }
+      if (!src) {
+        const what = `blob ${'blobHash' in item ? item.blobHash : '?'} missing for ${item.path}`
+        if (opts.missingBlob === 'fail') throw new Error(what)
+        console.error(`[export] ${what}`)
+        continue
+      }
       const entry = 'docName' in item || !STORED.has(extensionOf(item.path))
         ? new ZipDeflate(item.path, { level: 6 })
         : new ZipPassThrough(item.path)
@@ -172,5 +191,5 @@ export function exportZipStream(s: Services, projectId: string, opts: ExportOpti
       done()
     },
   }, { highWaterMark: 1 })
-  return { name: exportFileName(project?.name ?? 'project'), stream }
+  return stream
 }

@@ -20,7 +20,12 @@ export const MAIN_TEMPLATE = String.raw`\documentclass{article}
 \end{document}
 `
 
-export interface Access { projectId: string; role: Role }
+export interface Access {
+  projectId: string
+  role: Role
+  /** The caller (credited as an author of the changes they make, docs/M3.md §1). */
+  userId: string
+}
 
 /**
  * The caller's role in a live project. A project the caller cannot see (bad id, not a member,
@@ -30,7 +35,7 @@ export function requireAccess(db: DB, projectId: string | undefined, userId: str
   if (!isUuid(projectId)) throw notFound()
   const role = roleOf(db, projectId, userId)
   if (!role) throw notFound()
-  return { projectId, role }
+  return { projectId, role, userId }
 }
 
 export function requireRole(a: Access, ok: (r: Role) => boolean): void {

@@ -11,6 +11,7 @@ import { removeAwarenessStates, type Awareness } from 'y-protocols/awareness'
 import { fileDocName, metaDocName, type MetaEvent } from '@ligature/shared'
 import { isCloseReason, parseMetaEvent, type CloseReason } from './projectEvents.ts'
 import { guardAwareness, peersFrom, type PresenceUser } from './presence.ts'
+import { trackDoc, type LocalState } from './recovery.ts'
 
 /** Yjs text key used by the server for file contents. */
 export const TEXT_KEY = 'content'
@@ -50,6 +51,8 @@ export interface FileSession {
   undoManager: Y.UndoManager
   /** Was a Y.Doc update with this origin made here (typing, undo) rather than received from the server? */
   isLocal(origin: unknown): boolean
+  /** The text now, and whether it holds edits the server has not acknowledged (docs/M3.md §4 recovery). */
+  localState(): LocalState
   /** Re-authenticate after the server closed this doc (e.g. role-changed); keeps the Y.Doc. No-op otherwise. */
   reconnect(): void
   close(): void
@@ -180,9 +183,13 @@ export class ProjectCollab {
 
     const ytext = doc.getText(TEXT_KEY)
     const undoManager = new Y.UndoManager(ytext)
+    // Which edits the server has acknowledged (see SyncTracker for why not provider.hasUnsyncedChanges).
+    const tracker = trackDoc(doc, ytext, provider)
+    provider.on('unsyncedChanges', ({ number }: { number: number }) => { if (number === 0) tracker.acknowledged() })
     const session: FileSession = {
       fileId, epoch, doc, ytext, awareness, undoManager,
       isLocal: origin => origin !== provider,
+      localState: () => tracker.state(ytext.toString()),
       reconnect: () => {
         if (closed) return
         if (serverClosed.closed) bumpPresence(awareness)

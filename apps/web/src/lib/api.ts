@@ -1,9 +1,10 @@
 import type {
   AcceptInviteResponse, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, BuildResult, CreatedInvite,
-  CreateFileRequest, CreateInviteRequest, ImportResponse, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me,
+  CreateFileRequest, CreateInviteRequest, GcReport, ImportResponse, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me,
   Member, OutputName, ProjectDetail, ProjectSummary, RestoreRequest, RestoreResponse, SignupRequest,
   SynctexEditResponse, SynctexViewResponse, TrashEntry, TreeEntry, UpdateFileRequest, UpdateProjectRequest,
-  UploadResponse,
+  UploadResponse, RestoreVersionRequest, RestoreVersionResponse, StorageReport, VersionDetail, VersionDiff, VersionPage,
+  VersionSummary,
 } from '@ligature/shared'
 
 export type { BuildResult }
@@ -72,6 +73,9 @@ export const api = {
   adminUpdateUser: (id: string, req: AdminUpdateUserRequest) => request<AdminUser>('PATCH', `/api/admin/users/${enc(id)}`, req),
   adminSettings: () => request<InstanceSettings>('GET', '/api/admin/settings'),
   adminUpdateSettings: (s: InstanceSettings) => request<InstanceSettings>('PATCH', '/api/admin/settings', s),
+  adminStorage: () => request<StorageReport>('GET', '/api/admin/storage'),
+  /** Runs the garbage collection now (or joins the run in progress) and returns its report. */
+  adminRunGc: () => request<GcReport>('POST', '/api/admin/gc'),
 
   // projects
   projects: () => request<ProjectSummary[]>('GET', '/api/projects'),
@@ -111,6 +115,45 @@ export const api = {
     request<RestoreResponse>('POST', `${p(id)}/trash/${enc(fileId)}/restore`, req),
   purge: (id: string, fileId: string) => request<{ ok: true }>('DELETE', `${p(id)}/trash/${enc(fileId)}`),
   emptyTrash: (id: string) => request<{ ok: true }>('DELETE', `${p(id)}/trash`),
+
+  // history (M3)
+  versions: (id: string, before?: string, limit?: number) => {
+    const q = new URLSearchParams()
+    if (before) q.set('before', before)
+    if (limit !== undefined) q.set('limit', String(limit))
+    const qs = q.toString()
+    return request<VersionPage>('GET', `${p(id)}/versions${qs ? `?${qs}` : ''}`)
+  },
+  createVersion: (id: string, label: string) => request<VersionSummary>('POST', `${p(id)}/versions`, { label }),
+  labelVersion: (id: string, versionId: string, label: string | null) =>
+    request<VersionSummary>('PATCH', `${p(id)}/versions/${enc(versionId)}`, { label }),
+  version: (id: string, versionId: string) => request<VersionDetail>('GET', `${p(id)}/versions/${enc(versionId)}`),
+  /** `against`: a version id or 'current' (old side); default the previous version. */
+  versionDiff: (id: string, versionId: string, against?: string) =>
+    request<VersionDiff>('GET', `${p(id)}/versions/${enc(versionId)}/diff${against ? `?against=${enc(against)}` : ''}`),
+  restoreVersion: (id: string, versionId: string, req: RestoreVersionRequest = {}) =>
+    request<RestoreVersionResponse>('POST', `${p(id)}/versions/${enc(versionId)}/restore`, req),
+}
+
+/** A file's content in a version (`inline` only has an effect for png/jpg/gif/webp, never SVG). */
+export function versionFileUrl(projectId: string, versionId: string, path: string, inline = false): string {
+  return `${p(projectId)}/versions/${enc(versionId)}/file?path=${enc(path)}${inline ? '&inline=1' : ''}`
+}
+
+/** Download URL of a version as a zip. */
+export function versionZipUrl(projectId: string, versionId: string): string {
+  return `${p(projectId)}/versions/${enc(versionId)}/export.zip`
+}
+
+/** Fetch a text file's content (a version's file or a live raw file) as text. */
+export async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url, { credentials: 'same-origin' })
+  if (!res.ok) {
+    if (res.status === 401) onUnauthenticated()
+    const data = (await res.json().catch(() => null)) as unknown
+    throw toApiError(res.status, data)
+  }
+  return res.text()
 }
 
 /** Download URL of the project as a zip (the server sends it as an attachment). */

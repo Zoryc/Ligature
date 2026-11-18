@@ -3,9 +3,9 @@
   import type * as Y from 'yjs'
   import {
     can, type BuildResult, type Diagnostic, type ImportReport, type Me, type MetaEvent, type ProjectDetail, type TrashEntry,
-    type TreeEntry,
+    type TreeEntry, type VersionSummary,
   } from '@ligature/shared'
-  import { api, ApiError, buildFileUrl, buildHasOutput, exportZipUrl, fetchBuildLog, rawFileUrl } from '../lib/api.ts'
+  import { api, ApiError, buildFileUrl, buildHasOutput, exportZipUrl, fetchBuildLog, fetchText, rawFileUrl } from '../lib/api.ts'
   import { ProjectCollab, type ConnectionStatus, type FileSession, type PresenceUser } from '../lib/collab.ts'
   import { userColor } from '../lib/colors.ts'
   import { treeRows, textFilesByPath } from '../lib/tree.ts'
@@ -34,6 +34,13 @@
   import SettingsPanel from '../lib/SettingsPanel.svelte'
   import MembersPanel from '../lib/MembersPanel.svelte'
   import TrashPanel from '../lib/TrashPanel.svelte'
+  import HistoryPanel from '../lib/HistoryPanel.svelte'
+  import FileDiff from '../lib/FileDiff.svelte'
+  import { restoreResultText, sameAsCurrent, undoConfirmText, undoPaths, versionRef, type DiffRequest } from '../lib/history.ts'
+  import { confirmDialog } from '../lib/dialogs.svelte.ts'
+  import { RestoreNotices, showRestoredToast, type RestoredEvent } from '../lib/restoreToast.ts'
+  import RecoveryDialog from '../lib/RecoveryDialog.svelte'
+  import { copyText, execCommandCopy, hasLocalChanges, recoveryOutcome } from '../lib/recovery.ts'
 
   interface Props { id: string; me: Me }
   let { id, me }: Props = $props()
@@ -43,7 +50,7 @@
   let loadError = $state<string | null>(null)
   let status = $state<ConnectionStatus>('connecting')
   let peers = $state.raw<PresenceUser[]>([])
-  let panel = $state<'none' | 'settings' | 'members' | 'trash'>('none')
+  let panel = $state<'none' | 'settings' | 'members' | 'trash' | 'history'>('none')
   let membersPanel = $state<ReturnType<typeof MembersPanel> | undefined>(undefined)
   let menuOpen = $state(false)
   let menuEl = $state<HTMLElement | undefined>(undefined)
@@ -57,6 +64,12 @@
   let highlightId = $state<string | null>(null)
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
+  // History
+  let historyPanel = $state<ReturnType<typeof HistoryPanel> | undefined>(undefined)
+  /** File comparison shown next to the History panel. */
+  let diffReq = $state.raw<DiffRequest | null>(null)
+  const restoreNotices = new RestoreNotices()
+
   // Open file (text, in the editor) or preview (image)
   let file = $state.raw<FileSession | null>(null)
   let fileReady = $state(false)
@@ -66,6 +79,11 @@
   let preview = $state.raw<TreeEntry | null>(null)
   let editor = $state.raw<ReturnType<typeof Editor> | undefined>(undefined)
   let pendingJump: { line: number; flash: boolean } | null = null
+
+  // Recovery after a doc rebuild (docs/M3.md §4): our unacknowledged text vs. the server's current text.
+  let recovery = $state.raw<{ fileId: string; path: string; localText: string; serverText: string | null; error: string | null } | null>(null)
+  /** Set while we fetch the server's text to decide whether the dialog is needed. */
+  let recovering = $state(false)
 
   // Builds
   let compiling = $state(false)
@@ -110,6 +128,8 @@
         : !shown.synctex ? 'This build has no SyncTeX data.'
           : null)
   let showInPdfProblem = $derived(syncProblem ?? (!file || !fileReady ? 'Open a source file first.' : null))
+  let panelTitle = $derived(
+    panel === 'settings' ? 'Project settings' : panel === 'members' ? 'Members' : panel === 'history' ? 'History' : 'Trash')
   let reportShown = $derived(importReport && detail ? reportView(detail.name, importReport) : null)
 
   // Auto-compile only for owners/editors, and only while the toggle is on.
@@ -298,6 +318,60 @@
     if (entry) openFile(entry)
   }
 
+  /**
+   * The open file got a new epoch (its doc was rebuilt on the server). Without edits the server lacks,
+   * re-open it silently; otherwise compare our text with the server's and show the recovery dialog.
+   */
+  async function reopenAfterRebuild() {
+    const s = file
+    if (!s || recovering) return
+    const local = s.localState()
+    if (!hasLocalChanges(local)) {
+      reopenFile()
+      return
+    }
+    const path = openPath
+    recovering = true
+    closeFile()
+    let serverText: string | null = null
+    let error: string | null = null
+    try {
+      serverText = await fetchText(rawFileUrl(id, s.fileId))
+    } catch (e) {
+      error = `Could not load the current version: ${errorMessage(e)}`
+    } finally {
+      recovering = false
+    }
+    if (destroyed || leaving) return
+    if (recoveryOutcome(local, serverText) === 'reopen') {
+      // The server has our text after all. Re-open, unless the user has opened something else meanwhile.
+      if (!file && !preview) openCurrentVersion(s.fileId, path)
+      return
+    }
+    recovery = { fileId: s.fileId, path, localText: local.text, serverText, error }
+  }
+
+  /** Open a file at its current epoch (after a rebuild), or say that it is gone. */
+  function openCurrentVersion(fileId: string, path: string) {
+    const entry = detail?.tree.find(e => e.id === fileId && e.kind === 'text')
+    if (entry) openFile(entry)
+    else fileNotice = `"${path || 'The file'}" no longer exists.`
+  }
+
+  async function copyRecoveryText() {
+    if (!recovery) return
+    const ok = await copyText(recovery.localText, { clipboard: navigator.clipboard, execCopy: execCommandCopy })
+    if (ok) toast('Your text was copied to the clipboard.')
+    else toast('Could not copy automatically. Select your text on the left and copy it with Ctrl+C.', 'error', 6000)
+  }
+
+  function closeRecovery() {
+    const r = recovery
+    if (!r) return
+    recovery = null
+    openCurrentVersion(r.fileId, r.path)
+  }
+
   function applyPendingJump() {
     if (pendingJump !== null && editor) {
       editor.gotoLine(pendingJump.line, pendingJump.flash)
@@ -375,8 +449,7 @@
       fileNotice = `"${name}" was moved to the trash.`
       toast(fileNotice)
     } else if (outcome === 'reopen') {
-      toast('This file was reset on the server; reopening it.')
-      reopenFile()
+      void reopenAfterRebuild()
     } else if (roleChanged) {
       // The server sets read-only per connection at authentication (and closed us): re-authenticate.
       file.reconnect()
@@ -522,6 +595,14 @@
         case 'file-reload':
           void refreshProject()
           break
+        case 'refresh-versions':
+          if (panel === 'history') void historyPanel?.reload()
+          break
+        case 'version-restored': {
+          const ev = restoreNotices.event(a)
+          if (ev) void announceRestoreEvent(ev)
+          break
+        }
       }
     }
   }
@@ -552,10 +633,119 @@
     }
   }
 
-  function togglePanel(p: 'settings' | 'members' | 'trash') {
+  function togglePanel(p: 'settings' | 'members' | 'trash' | 'history') {
     panel = panel === p ? 'none' : p
     menuOpen = false
+    diffReq = null
     if (panel === 'trash') void loadTrash()
+  }
+
+  // ---------- history ----------
+
+  /**
+   * Restore a version (whole project, or only `paths`). `what` names it in the toast ('to "Draft 1"').
+   * Resolves true when it was restored.
+   */
+  async function restoreVersion(versionId: string, what: string, paths?: string[], undo = false): Promise<boolean> {
+    restoreNotices.begin()
+    let pre: string | null = null
+    let detailText = ''
+    try {
+      const r = await api.restoreVersion(id, versionId, paths ? { paths } : {})
+      pre = r.preRestoreVersionId
+      detailText = restoreResultText(r)
+      return true
+    } catch (e) {
+      const msg = errorMessage(e, { 'not-found': 'That version no longer exists.' })
+      toast(undo
+        ? `Could not undo the restore: ${msg.endsWith('.') ? msg : `${msg}.`} The state before it stays in History as a "Before restore" version.`
+        : `Could not restore: ${msg}`, 'error', 6000)
+      return false
+    } finally {
+      const { own, others } = restoreNotices.finish(pre)
+      if (!destroyed) {
+        if (own && pre) {
+          const target: UndoTarget = { versionId, preRestoreVersionId: pre, by: null, ...(paths ? { paths } : {}) }
+          showRestoredToast({
+            what, by: me.displayName, mine: true, detail: detailText, canUndo: canEdit,
+            onUndo: () => undoRestore(target),
+          })
+        }
+        for (const ev of others) void announceRestoreEvent(ev)
+        if (pre) {
+          // The broadcasts do this too; this one is immediate.
+          void refreshProject()
+          void loadTrash()
+        }
+      }
+    }
+  }
+
+  /** From the History panel. */
+  function restoreFromHistory(v: VersionSummary, paths?: string[]): Promise<boolean> {
+    const ref = versionRef(v)
+    const what = paths && paths.length === 1 ? `"${paths[0]}" to ${ref}` : paths ? `${paths.length} files to ${ref}` : `to ${ref}`
+    return restoreVersion(v.id, what, paths)
+  }
+
+  /** A collaborator's restore (or ours from another tab): toast with Undo for owners/editors. */
+  async function announceRestoreEvent(ev: RestoredEvent) {
+    let ref = 'an earlier version'
+    try {
+      ref = versionRef((await api.version(id, ev.versionId)).version)
+    } catch {
+      // thinned or unreadable: keep the generic text
+    }
+    if (destroyed || leaving) return
+    const target: UndoTarget = { versionId: ev.versionId, preRestoreVersionId: ev.preRestoreVersionId, by: ev.by }
+    showRestoredToast({
+      what: `to ${ref}`, by: ev.by, mine: false, canUndo: canEdit,
+      onUndo: () => undoRestore(target),
+    })
+  }
+
+  /**
+   * A restore to undo: `versionId` was restored (only `paths` of it, when set: one of our partial restores),
+   * `preRestoreVersionId` is the backup taken just before. `by`: who restored it (null: we did, in this tab).
+   */
+  interface UndoTarget { versionId: string; preRestoreVersionId: string; by: string | null; paths?: string[] }
+
+  /**
+   * Undo a restore; resolves false when nothing was undone (the toast then offers Undo again).
+   * - Our partial restore: restore only the files it touched, at their paths in the backup (undoPaths()).
+   * - Otherwise the whole project goes back to the backup. If the project changed since the restore (edits by
+   *   anyone, or a collaborator's restore that was only partial: the event does not say), ask first.
+   */
+  async function undoRestore(u: UndoTarget): Promise<boolean> {
+    const before = 'to the state before the restore'
+    if (u.paths) {
+      let paths: string[]
+      try {
+        const [restored, pre] = await Promise.all([api.version(id, u.versionId), api.version(id, u.preRestoreVersionId)])
+        paths = undoPaths(restored.files, u.paths, pre.files)
+      } catch (e) {
+        toast(`Could not undo the restore: ${errorMessage(e, { 'not-found': 'That version no longer exists.' })}`, 'error', 6000)
+        return false
+      }
+      if (paths.length === 0) {
+        const one = u.paths.length === 1 ? `"${u.paths[0]}" was` : 'These files were'
+        toast(`Nothing to undo: ${one} not in the project before the restore. Move ${u.paths.length === 1 ? 'it' : 'them'} to the trash if you do not want ${u.paths.length === 1 ? 'it' : 'them'}.`, 'info', 8000)
+        return true
+      }
+      return restoreVersion(u.preRestoreVersionId, paths.length === 1 ? `"${paths[0]}" ${before}` : `${paths.length} files ${before}`, paths, true)
+    }
+    let unchanged = false
+    try {
+      unchanged = sameAsCurrent(await api.versionDiff(id, u.versionId, 'current'))
+    } catch {
+      // cannot tell: ask
+    }
+    if (destroyed || leaving) return true
+    if (!unchanged) {
+      const ok = await confirmDialog('Undo the restore', undoConfirmText(u.by), { confirmLabel: 'Undo restore', danger: true })
+      if (!ok || destroyed || leaving) return false
+    }
+    return restoreVersion(u.preRestoreVersionId, before, undefined, true)
   }
 
   // ---------- builds ----------
@@ -770,6 +960,7 @@
       </button>
       <button type="button" class:active={panel === 'settings'} onclick={() => togglePanel('settings')}>Settings</button>
       <button type="button" class:active={panel === 'members'} onclick={() => togglePanel('members')}>Members</button>
+      <button type="button" class:active={panel === 'history'} onclick={() => togglePanel('history')}>History</button>
       <span class="menu" bind:this={menuEl}>
         <button type="button" class:active={menuOpen} aria-haspopup="menu" aria-expanded={menuOpen}
           onclick={() => { menuOpen = !menuOpen }}>Project ▾</button>
@@ -830,7 +1021,7 @@
                 readOnly={!canEdit} diagnostics={editorDiags} />
             {/key}
           {/key}
-        {:else if file}
+        {:else if file || recovering}
           <div class="message muted">Loading file…</div>
         {:else}
           <div class="message">
@@ -852,16 +1043,31 @@
       </div>
     </section>
 
+    {#if panel === 'history' && diffReq}
+      <section class="diff-overlay" aria-label="Differences">
+        <FileDiff projectId={id} row={diffReq.row} left={diffReq.left} right={diffReq.right} leftTitle={diffReq.leftTitle}
+          rightTitle={diffReq.rightTitle} onClose={() => { diffReq = null }} />
+      </section>
+    {/if}
+
+    {#if recovery}
+      <RecoveryDialog path={recovery.path} localText={recovery.localText} serverText={recovery.serverText}
+        error={recovery.error} onCopy={copyRecoveryText} onOpenCurrent={closeRecovery} />
+    {/if}
+
     {#if panel !== 'none'}
-      <aside class="side-panel" aria-label={panel === 'settings' ? 'Project settings' : panel === 'members' ? 'Members' : 'Trash'}>
+      <aside class="side-panel" class:wide={panel === 'history'} aria-label={panelTitle}>
         <div class="side-head">
-          <strong>{panel === 'settings' ? 'Project settings' : panel === 'members' ? 'Members' : 'Trash'}</strong>
-          <button type="button" onclick={() => { panel = 'none' }}>Close</button>
+          <strong>{panelTitle}</strong>
+          <button type="button" onclick={() => { panel = 'none'; diffReq = null }}>Close</button>
         </div>
         {#if panel === 'settings'}
           <SettingsPanel {detail} onUpdated={applyDetail} />
         {:else if panel === 'members'}
           <MembersPanel bind:this={membersPanel} projectId={id} projectName={detail.name} {me} role={detail.role} />
+        {:else if panel === 'history'}
+          <HistoryPanel bind:this={historyPanel} projectId={id} tree={detail.tree} rootId={detail.rootId} {canEdit}
+            onOpenDiff={d => { diffReq = d }} onRestore={restoreFromHistory} />
         {:else}
           <TrashPanel projectId={id} entries={trash} loadError={trashError} tree={detail.tree} {canEdit}
             isOwner={detail.role === 'owner'} {onRestored} onChanged={() => void loadTrash()} />
@@ -1032,6 +1238,18 @@
     padding: 10px 14px;
     overflow: auto;
     z-index: 50;
+  }
+  .side-panel.wide { width: min(440px, 100vw); }
+  .diff-overlay {
+    position: absolute;
+    top: 42px;
+    left: 0;
+    right: min(440px, 100vw);
+    bottom: 0;
+    z-index: 45;
+    border-right: 1px solid #bbb;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+    background: white;
   }
   .side-head {
     display: flex;

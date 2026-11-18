@@ -3,13 +3,14 @@ import { can, metaDocName, parseDocName, type MetaEvent, type Role } from '@liga
 import type { DB } from '../db/index.ts'
 import { invalidSessionHashes, readCookie, SESSION_COOKIE, sessionForToken, type SessionUser } from '../auth/sessions.ts'
 import { getFile, roleOf } from '../projects/repo.ts'
-import { DocStore, LOAD_ORIGIN, TEXT_KEY } from './docStore.ts'
+import { DocStore, LOAD_ORIGIN, TEXT_KEY, type Compacted } from './docStore.ts'
 import { applyTextDiff } from './textDiff.ts'
 
 export interface CollabContext { user: SessionUser; role: Role; projectId: string; sessionHash: string }
 
 /** Reasons sent to the client in the per-document CLOSE message. */
 export type CloseReason = 'access-revoked' | 'role-changed' | 'project-deleted' | 'file-deleted' | 'account-disabled' | 'session-ended'
+  | 'doc-rebuilt' // M3: the doc got a new generation (epoch); reconnecting yields reload-required
 
 /** Thrown from onAuthenticate; Hocuspocus sends `reason` to the provider as permission-denied. */
 class Denied extends Error {
@@ -23,6 +24,16 @@ function userIdOfOrigin(origin: unknown): string | null {
   return null
 }
 
+/** Change hooks for the version history (docs/M3.md §1); see history/history.ts DocChangeHooks. */
+export interface CollabChangeHooks {
+  beforeTransaction(docName: string, doc: Document): void
+  changed(docName: string, userId: string | null): void
+  projectIdle(projectId: string): void
+}
+
+/** Called after a doc with no connected clients was compacted on unload (oversized-doc rebuild, docs/M3.md §4). */
+export type CompactionHook = (docName: string, c: Compacted) => void
+
 export interface CollabOptions {
   /** How often open connections are re-checked against their session (logout elsewhere, expiry, disable). */
   sessionCheckMs?: number
@@ -31,6 +42,9 @@ export interface CollabOptions {
 export function createCollab(db: DB, store: DocStore, opts: CollabOptions = {}) {
   /** The Yjs clientID whose presence each connection may set (see beforeHandleAwareness). */
   const awarenessClient = new WeakMap<Connection, number>()
+  /** Set once the history service exists (it needs this collab instance). */
+  let hooks: CollabChangeHooks | null = null
+  let compactionHook: CompactionHook | null = null
 
   const hocuspocus = new Hocuspocus<CollabContext>({
     name: 'ligature',
@@ -94,10 +108,16 @@ export function createCollab(db: DB, store: DocStore, opts: CollabOptions = {}) 
     async onLoadDocument({ document, documentName }) {
       if (parseDocName(documentName)?.kind !== 'file') return
       store.load(documentName, document)
+      // The version history may need the text as it was before a change (a project's first version).
+      document.on('beforeTransaction', (tr: { origin: unknown }) => {
+        if (tr.origin !== LOAD_ORIGIN) hooks?.beforeTransaction(documentName, document)
+      })
       // Log every later change synchronously, in the same tick it is applied.
       document.on('update', (update: Uint8Array, origin: unknown) => {
         if (origin === LOAD_ORIGIN) return
-        store.append(documentName, update, userIdOfOrigin(origin))
+        const userId = userIdOfOrigin(origin)
+        store.append(documentName, update, userId)
+        hooks?.changed(documentName, userId)
       })
     },
 
@@ -114,11 +134,19 @@ export function createCollab(db: DB, store: DocStore, opts: CollabOptions = {}) 
 
     async beforeUnloadDocument({ document, documentName }) {
       if (parseDocName(documentName)?.kind !== 'file' || !db.open) return
-      store.compact(documentName, document)
+      const c = store.compact(documentName, document)
+      // Nobody is connected (Hocuspocus only unloads idle docs) and nobody can attach before the unload completes.
+      if (c && document.getConnectionsCount() === 0) compactionHook?.(documentName, c)
     },
 
     async afterUnloadDocument({ documentName }) {
       store.release(documentName)
+      // The last client left the project (all its docs, the meta doc included, are unloaded).
+      const projectId = parseDocName(documentName)?.projectId
+      if (projectId === undefined || !hooks) return
+      const prefix = `proj/${projectId}/`
+      const loaded = (names: Iterable<string>) => { for (const n of names) if (n.startsWith(prefix)) return true; return false }
+      if (!loaded(hocuspocus.documents.keys()) && !loaded(hocuspocus.loadingDocuments.keys())) hooks.projectIdle(projectId)
     },
   })
 
@@ -154,6 +182,16 @@ export function createCollab(db: DB, store: DocStore, opts: CollabOptions = {}) 
 
   return {
     hocuspocus,
+
+    /** Install the version-history hooks (called once at startup). */
+    setChangeHooks(h: CollabChangeHooks | null): void {
+      hooks = h
+    },
+
+    /** Install the compaction hook (the oversized-doc rebuild; called once at startup). */
+    setCompactionHook(h: CompactionHook | null): void {
+      compactionHook = h
+    },
 
     /** Live doc if loaded (authoritative), else undefined. */
     liveDoc(documentName: string): Document | undefined {

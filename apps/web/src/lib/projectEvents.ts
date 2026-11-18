@@ -22,7 +22,13 @@ export function parseMetaEvent(payload: string): MetaEvent | null {
     case 'members-changed':
     case 'project-deleted':
     case 'trash-changed':
+    case 'versions-changed':
       return { type: e['type'] }
+    case 'version-restored': {
+      const { versionId, preRestoreVersionId, by } = e
+      if (typeof versionId !== 'string' || typeof preRestoreVersionId !== 'string' || typeof by !== 'string') return null
+      return { type: 'version-restored', versionId, preRestoreVersionId, by }
+    }
     case 'compile-finished': {
       const { buildId, status } = e
       if (typeof buildId !== 'string' || !['success', 'failure', 'timeout', 'error'].includes(status as string)) return null
@@ -42,6 +48,10 @@ export type ProjectAction =
   | { type: 'drop-peer'; userId: string }
   /** Refetch the trash listing (its count is shown under the file tree). */
   | { type: 'refresh-trash' }
+  /** Refetch the version history (the panel reloads if open, else on next open). */
+  | { type: 'refresh-versions' }
+  /** Someone (maybe us) restored a version: toast with Undo. */
+  | { type: 'version-restored'; versionId: string; preRestoreVersionId: string; by: string }
   /** Refetch the member list (only when the members panel is open). */
   | { type: 'refresh-members' }
   /** Hand the build event to BuildEvents. */
@@ -77,7 +87,7 @@ export const SESSION_ENDED = 'Your session ended (logged out elsewhere, or the p
  * from an outage. MetaEvents sent while we were away are lost, so refetch what they would have updated.
  */
 export function resyncActions(ctx: Pick<EventContext, 'membersOpen'>): ProjectAction[] {
-  return [{ type: 'refresh-project' }, { type: 'refresh-trash' }, ...(ctx.membersOpen ? [{ type: 'refresh-members' } as const] : [])]
+  return [{ type: 'refresh-project' }, { type: 'refresh-trash' }, { type: 'refresh-versions' }, ...(ctx.membersOpen ? [{ type: 'refresh-members' } as const] : [])]
 }
 
 export function metaEventActions(e: MetaEvent, ctx: EventContext): ProjectAction[] {
@@ -98,6 +108,10 @@ export function metaEventActions(e: MetaEvent, ctx: EventContext): ProjectAction
       return [{ type: 'leave', notice: DELETED }]
     case 'trash-changed':
       return [{ type: 'refresh-trash' }]
+    case 'versions-changed':
+      return [{ type: 'refresh-versions' }]
+    case 'version-restored':
+      return [{ type: 'version-restored', versionId: e.versionId, preRestoreVersionId: e.preRestoreVersionId, by: e.by }]
   }
 }
 

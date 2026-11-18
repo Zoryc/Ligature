@@ -92,6 +92,15 @@ export interface RateLimitConfig {
   /** SyncTeX files parsed (cache misses) per user per `synctexWindowMs` (docs/M2.md §3) */
   synctexParsesPerUser: number
   synctexWindowMs: number
+  /**
+   * Named versions and restores per user per `versionWriteWindowMs` (docs/M3.md §1–§2): each one snapshots
+   * the whole project synchronously and adds rows that are never thinned.
+   */
+  versionWritesPerUser: number
+  versionWriteWindowMs: number
+  /** Diffs against the live state (`current`, a whole-project snapshot each) per user per `liveDiffWindowMs`. */
+  liveDiffsPerUser: number
+  liveDiffWindowMs: number
 }
 
 export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
@@ -116,6 +125,10 @@ export const DEFAULT_RATE_LIMITS: RateLimitConfig = {
   exportIdleMs: 60 * 1000,
   synctexParsesPerUser: 60,
   synctexWindowMs: 5 * 60 * 1000,
+  versionWritesPerUser: 60,
+  versionWriteWindowMs: 10 * 60 * 1000,
+  liveDiffsPerUser: 120,
+  liveDiffWindowMs: 5 * 60 * 1000,
 }
 
 export function createLimiters(cfg: RateLimitConfig) {
@@ -133,6 +146,8 @@ export function createLimiters(cfg: RateLimitConfig) {
     exportGate: new UploadGate(cfg.exportConcurrency, cfg.exportConcurrencyPerUser),
     exportIdleMs: cfg.exportIdleMs,
     synctexParse: new RateLimiter(cfg.synctexParsesPerUser, cfg.synctexWindowMs),
+    versionWrite: new RateLimiter(cfg.versionWritesPerUser, cfg.versionWriteWindowMs),
+    liveDiff: new RateLimiter(cfg.liveDiffsPerUser, cfg.liveDiffWindowMs),
   }
 }
 export type Limiters = ReturnType<typeof createLimiters>

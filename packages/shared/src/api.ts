@@ -257,7 +257,7 @@ export type MetaEvent =
   | { type: 'project-deleted' }
   | { type: 'trash-changed' }                           // M2: something was deleted, restored or purged
   | { type: 'versions-changed' }                        // M3: a version was created, named or thinned
-  | { type: 'version-restored'; versionId: string; preRestoreVersionId: string; by: string } // M3
+  | { type: 'version-restored'; versionId: string; preRestoreVersionId: string; by: string } // M3; by = display name
 
 /* ------------------------------------------------------------------ history (M3) */
 
@@ -288,9 +288,12 @@ export interface VersionSummary {
 /** GET /api/projects/:id/versions?before=<versionId>&limit=<1..100, default 50>  (member) — newest first */
 export interface VersionPage { versions: VersionSummary[]; hasMore: boolean }
 
-/** POST /api/projects/:id/versions  (owner/editor) — snapshot the current state as a named version */
+/**
+ * POST /api/projects/:id/versions  (owner/editor) — snapshot the current state as a named version
+ * -> VersionSummary. Label: 1–200 characters after trimming, no control characters.
+ */
 export interface CreateVersionRequest { label: string }
-/** PATCH /api/projects/:id/versions/:versionId  (owner/editor) — label a version (it is then never thinned) */
+/** PATCH /api/projects/:id/versions/:versionId  (owner/editor) — label a version (it is then never thinned) -> VersionSummary */
 export interface UpdateVersionRequest { label: string | null }
 
 export interface VersionFile {
@@ -319,7 +322,7 @@ export type FileChange = 'added' | 'removed' | 'modified' | 'renamed' | 'unchang
  * Files are matched by file id first (so a rename is 'renamed', possibly also modified), then by path.
  */
 export interface VersionDiff {
-  from: string            // version id, or 'current'
+  from: string            // version id, or 'current' ('' when :versionId is the first version: every file is 'added')
   to: string              // version id, or 'current'
   files: {
     change: FileChange
@@ -336,6 +339,8 @@ export interface VersionDiff {
 /**
  * POST /api/projects/:id/versions/:versionId/restore  (owner/editor)
  * Without `paths`: restore the whole project to that version. With `paths`: only those files (paths in the version).
+ * Errors: 400 (a path not in the version), 413 project-too-large (nothing changed), 409 content-missing.
+ * GET /api/projects/:id/versions/:versionId/export.zip  (member) -> application/zip of that version (M2 export headers).
  */
 export interface RestoreVersionRequest { paths?: string[] }
 export interface RestoreVersionResponse {
@@ -368,7 +373,10 @@ export interface StorageReport {
   lastGc: GcReport | null
 }
 
-/** POST /api/admin/gc  (admin) -> GcReport; also runs daily */
+/**
+ * POST /api/admin/gc  (admin) -> GcReport; also runs daily. Never runs twice at once: a request during a
+ * run waits for that run and gets its report.
+ */
 export interface GcReport {
   at: number
   durationMs: number
@@ -380,4 +388,17 @@ export interface GcReport {
   versionsThinned: number
   /** Soft-deleted projects older than the retention, purged. */
   projectsPurged: number
+}
+
+/**
+ * POST /api/admin/files/:fileId/rebuild  (admin) — rebuild a text file's Yjs doc from its text (docs/M3.md §4):
+ * the file gets a new epoch (clients still on the old one get `reload-required`). 404 for an unknown or
+ * non-text file; `409 doc-in-use` while anyone has the file open. (M3 addition.)
+ */
+export interface RebuildDocResponse {
+  fileId: string
+  /** The new epoch. */
+  epoch: number
+  stateBytesBefore: number
+  stateBytesAfter: number
 }

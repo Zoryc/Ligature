@@ -46,6 +46,7 @@ export async function uploadFile(s: Services, actor: SessionUser, a: Access, par
         }
         if (cls.kind === 'text') return { replaceText: existing, text: cls.text }
         assertCapacity(s, rows, 0, bytes.byteLength - (existing.size ?? 0))
+        s.history.beforeChange(a.projectId)
         storeBlob()
         s.db.prepare('UPDATE files SET blob_hash = ?, size = ?, updated_at = ? WHERE id = ?')
           .run(blobHash, bytes.byteLength, Date.now(), existing.id)
@@ -53,6 +54,7 @@ export async function uploadFile(s: Services, actor: SessionUser, a: Access, par
       }
       assertPathsValid([...rows, { id: 'new', parentId: parent.id, name }], ['new'])
       assertCapacity(s, rows, 1, cls.kind === 'binary' ? bytes.byteLength : 0)
+      s.history.beforeChange(a.projectId)
       storeBlob()
       const row = cls.kind === 'text'
         ? insertNode(s, a.projectId, { parentId: parent.id, name, kind: 'text', text: cls.text })
@@ -66,6 +68,7 @@ export async function uploadFile(s: Services, actor: SessionUser, a: Access, par
   }
 
   if ('done' in p1) {
+    s.history.noteChange(a.projectId, actor.id)
     if (p1.treeVersion !== null) s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion: p1.treeVersion })
     return toTreeEntry(p1.done)
   }

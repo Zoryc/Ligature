@@ -61,7 +61,8 @@ describe('trash can', () => {
     const t0 = Date.now()
     expect((await del(ed, p, ch.id)).status).toBe(200)
     await waitFor(() => meta.events().some(e => e.type === 'trash-changed'), 5_000, 'trash-changed on delete')
-    expect(meta.events().map(e => e.type)).toEqual(['tree-changed', 'tree-changed', 'tree-changed', 'tree-changed', 'tree-changed', 'tree-changed', 'trash-changed'])
+    // (M3: the first change also takes a version of the original state: one `versions-changed`)
+    expect(meta.events().map(e => e.type).filter(t => t !== 'versions-changed')).toEqual(['tree-changed', 'tree-changed', 'tree-changed', 'tree-changed', 'tree-changed', 'tree-changed', 'trash-changed'])
 
     const entries = await trash(owner, p)
     expect(entries).toHaveLength(1)

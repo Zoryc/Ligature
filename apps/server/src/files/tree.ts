@@ -97,9 +97,11 @@ export function createNode(s: Services, a: Access, req: CreateFileRequest): Tree
     const id = 'new'
     assertPathsValid([...rows, { id, parentId: parent.id, name }], [id])
     assertCapacity(s, rows, 1, 0)
+    s.history.beforeChange(a.projectId)
     const row = insertNode(s, a.projectId, { parentId: parent.id, name, kind: req.kind, ...(text !== undefined ? { text } : {}) })
     return { row, treeVersion: touchProject(s.db, a.projectId, true) }
   }).immediate()
+  s.history.noteChange(a.projectId, a.userId)
   s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion })
   return toTreeEntry(row)
 }
@@ -126,10 +128,14 @@ export function updateNode(s: Services, a: Access, fileId: string | undefined, r
     const moved = rows.map(r => r.id === node.id ? { ...r, name, parentId } : r)
     assertPathsValid(moved, subtreeIds(moved, node.id))
 
+    s.history.beforeChange(a.projectId)
     s.db.prepare('UPDATE files SET name = ?, parent_id = ?, updated_at = ? WHERE id = ?').run(name, parentId, Date.now(), node.id)
     return { row: { ...node, name, parentId }, treeVersion: touchProject(s.db, a.projectId, true) }
   }).immediate()
-  if (res.treeVersion !== null) s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion: res.treeVersion })
+  if (res.treeVersion !== null) {
+    s.history.noteChange(a.projectId, a.userId)
+    s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion: res.treeVersion })
+  }
   return toTreeEntry(res.row)
 }
 
@@ -164,6 +170,7 @@ export async function deleteNode(s: Services, actor: SessionUser, a: Access, fil
     const node = requireNode(rows, fileId)
     if (node.parentId === null) throw badRequest('The root folder cannot be deleted')
     const ids = new Set(subtreeIds(rows, node.id))
+    s.history.beforeChange(a.projectId)
     const now = Date.now()
     // One trash batch for the node and its live descendants (docs/M2.md §1).
     const batch = randomUUID()
@@ -181,6 +188,7 @@ export async function deleteNode(s: Services, actor: SessionUser, a: Access, fil
   }).immediate()
   // Same tick as the commit: no client update can slip in between.
   for (const d of res.docs) s.collab.closeDocConnections(d, 'file-deleted')
+  s.history.noteChange(a.projectId, actor.id)
   s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion: res.treeVersion })
   s.collab.broadcast(a.projectId, { type: 'trash-changed' })
   if (res.mainCleared) s.collab.broadcast(a.projectId, { type: 'project-changed' })

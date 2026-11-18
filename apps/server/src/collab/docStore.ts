@@ -13,6 +13,9 @@ const COMPACT_EVERY = 500
 
 interface Pending { docName: string; seq: number; update: Uint8Array; userId: string | null; ts: number }
 
+/** What a compaction wrote: the encoded state and the text mirror (for the oversized-doc check, docs/M3.md §4). */
+export interface Compacted { stateBytes: number; text: string }
+
 /** A seeded doc's initial state, computed ahead of the write (`DocStore.prepareSeed`). */
 export interface PreparedSeed { state: Uint8Array; text: string; hash: string }
 
@@ -33,6 +36,11 @@ export class DocStore {
   /** next seq to assign, per doc (only for docs touched by this process) */
   private nextSeq = new Map<string, number>()
   private sinceCompact = new Map<string, number>()
+  /**
+   * Loaded docs whose generation was replaced by a rebuild (docs/M3.md §4): their rows are gone and
+   * must not be written again by a later compaction (unload, shutdown). Cleared by `release`.
+   */
+  private retired = new Set<string>()
 
   private readonly stmt
   constructor(private readonly db: DB) {
@@ -69,6 +77,8 @@ export class DocStore {
   }
 
   append(docName: string, update: Uint8Array, userId: string | null): void {
+    // A retired generation has no rows any more; its last holders are disconnected and get reload-required.
+    if (this.retired.has(docName)) return
     const seq = this.nextSeq.get(docName)
     if (seq === undefined) throw new Error(`append to unloaded doc ${docName}`)
     this.nextSeq.set(docName, seq + 1)
@@ -101,9 +111,11 @@ export class DocStore {
   /**
    * Snapshot `doc` and drop the log rows it covers. Synchronous, so the doc cannot change underneath us.
    * Every update logged so far for this doc was applied to `doc` before being appended, so state ⊇ log[..upto].
+   * Returns null (and writes nothing) for a retired doc.
    */
-  compact(docName: string, doc: Y.Doc): void {
+  compact(docName: string, doc: Y.Doc): Compacted | null {
     this.flush()
+    if (this.retired.has(docName)) return null
     const next = this.nextSeq.get(docName)
     const upto = next !== undefined ? next - 1 : ((this.stmt.maxSeq.get(docName) as { m: number | null }).m ?? 0)
     const state = Y.encodeStateAsUpdate(doc)
@@ -113,12 +125,37 @@ export class DocStore {
       this.stmt.deleteUpTo.run(docName, upto)
     })()
     this.sinceCompact.set(docName, 0)
+    return { stateBytes: state.byteLength, text }
+  }
+
+  /**
+   * A loaded doc whose generation was replaced (rebuild): later compactions of it are skipped, so its
+   * deleted rows are never written back. Buffered updates are flushed first (the caller deletes them).
+   */
+  retire(docName: string): void {
+    this.flush()
+    this.retired.add(docName)
+  }
+
+  isRetired(docName: string): boolean {
+    return this.retired.has(docName)
+  }
+
+  /** Stored size of a closed doc: compacted state bytes, text mirror, and the bytes of its log rows. */
+  storedStats(docName: string): { stateBytes: number; text: string; logBytes: number } | null {
+    this.flush()
+    const st = this.db.prepare('SELECT length(state) AS stateBytes, text FROM doc_state WHERE doc_name = ?').get(docName) as
+      { stateBytes: number; text: string } | undefined
+    if (!st) return null
+    const log = this.db.prepare('SELECT COALESCE(SUM(length(update_blob)), 0) AS n FROM doc_updates WHERE doc_name = ?').get(docName) as { n: number }
+    return { ...st, logBytes: log.n }
   }
 
   /** Forget per-doc counters after a doc is unloaded (it will be re-read from the DB on next load). */
   release(docName: string): void {
     this.nextSeq.delete(docName)
     this.sinceCompact.delete(docName)
+    this.retired.delete(docName)
   }
 
   /** Text of a doc that is NOT loaded. Only valid after compaction (see recoverAll). */
@@ -152,14 +189,15 @@ export class DocStore {
    * Startup recovery: fold any leftover log rows (e.g. after kill -9) into doc_state,
    * so the text mirror used for compiles of closed docs is always current.
    */
-  recoverAll(): number {
+  recoverAll(onCompacted?: (docName: string, c: Compacted) => void): number {
     const names = (this.stmt.docsWithLog.all() as { name: string }[]).map(r => r.name)
     for (const name of names) {
       const doc = new Y.Doc({ gc: true })
       this.load(name, doc)
-      this.compact(name, doc)
+      const c = this.compact(name, doc)
       this.release(name)
       doc.destroy()
+      if (c) onCompacted?.(name, c)
     }
     return names.length
   }

@@ -7,11 +7,15 @@ import { SESSION_COOKIE, sessionForToken, type Session, type SessionUser } from 
 import type { Services } from '../services.ts'
 import type { Limiters } from './rateLimit.ts'
 import type { CompileOrchestrator } from '../compile/orchestrator.ts'
+import type { Maintenance } from '../maintenance/maintenance.ts'
+import type { Rebuilder } from '../collab/rebuild.ts'
 
 export type Env = { Variables: { user: SessionUser; session: Session } }
 
 export interface RouteDeps extends Services {
   compile: CompileOrchestrator
+  maintenance: Maintenance
+  rebuilder: Rebuilder
   limiters: Limiters
   secureCookies: boolean
   trustProxy: boolean

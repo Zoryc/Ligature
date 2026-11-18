@@ -131,4 +131,31 @@ export const MIGRATIONS: string[] = [
       ORDER BY a.id DESC LIMIT 1)
     WHERE deleted_at IS NOT NULL;
   `,
+
+  /* 4: M3 — versions (docs/M3.md §1) */ `
+  CREATE TABLE versions (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('auto','compile','named','pre_restore','import')),
+    label TEXT, created_by TEXT, created_at INTEGER NOT NULL,
+    tree_version INTEGER NOT NULL,
+    manifest_hash TEXT NOT NULL                     -- sha256 of the sorted (path, file_id, hash) list: dedupe
+  );
+  CREATE INDEX versions_project ON versions(project_id, created_at DESC);
+  CREATE TABLE version_files (
+    version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    path TEXT NOT NULL, file_id TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('text','binary')),
+    blob_hash TEXT NOT NULL, size INTEGER NOT NULL,
+    PRIMARY KEY (version_id, path));
+  CREATE INDEX version_files_blob ON version_files(blob_hash);
+  CREATE TABLE version_authors (
+    version_id TEXT NOT NULL REFERENCES versions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL, PRIMARY KEY (version_id, user_id));
+  ALTER TABLE projects ADD COLUMN dirty_since INTEGER;          -- first unsnapshotted change
+  ALTER TABLE projects ADD COLUMN last_change_at INTEGER;
+  CREATE TABLE pending_authors (project_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (project_id, user_id));
+
+  -- Implementation detail (not in the spec's SQL): projects that existed before M3 are "dirty since
+  -- forever", so the first scheduler pass takes an auto version of their current state.
+  UPDATE projects SET dirty_since = 0 WHERE deleted_at IS NULL;
+  `,
 ]

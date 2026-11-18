@@ -21,7 +21,8 @@ export async function startServer(dataDir: string, port: number, extraEnv: Recor
   const proc = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     cwd: SERVER_DIR,
     env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATA_DIR: dataDir, COMPILER_URL: 'http://127.0.0.1:1', ...extraEnv },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    // The IPC channel lets tests ask for a graceful stop on Windows too (see stopGracefully).
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   })
   let out = ''
   proc.stdout!.on('data', d => { out += d })
@@ -42,6 +43,21 @@ export async function killHard(s: RunningServer): Promise<void> {
   const exited = new Promise(r => s.proc.once('exit', r))
   s.proc.kill('SIGKILL')
   await exited
+}
+
+/**
+ * Graceful stop (flush documents, close the database), as on SIGTERM. Windows has no SIGTERM for child
+ * processes, so there the same shutdown is requested over the IPC channel.
+ */
+export async function stopGracefully(s: RunningServer, timeoutMs = 15_000): Promise<void> {
+  if (s.proc.exitCode !== null || s.proc.signalCode !== null) return
+  const exited = new Promise<void>(r => s.proc.once('exit', () => r()))
+  if (process.platform === 'win32') s.proc.send('shutdown')
+  else s.proc.kill('SIGTERM')
+  const timer = setTimeout(() => s.proc.kill('SIGKILL'), timeoutMs)
+  await exited
+  clearTimeout(timer)
+  if (s.proc.exitCode !== 0) throw new Error(`graceful stop failed (exit ${s.proc.exitCode}, signal ${s.proc.signalCode}):\n${s.output()}`)
 }
 
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))

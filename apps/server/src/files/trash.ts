@@ -153,6 +153,7 @@ export function restoreFromTrash(s: Services, actor: SessionUser, a: Access, fil
     const binaryBytes = restored.reduce((n, r) => n + (r.kind === 'binary' ? r.size ?? 0 : 0), 0)
     assertCapacity(s, live, restored.length, binaryBytes)
 
+    s.history.beforeChange(a.projectId)
     const now = Date.now()
     // Rename/move first, while the row is still deleted (the unique-name index only covers live rows).
     s.db.prepare('UPDATE files SET name = ?, parent_id = ? WHERE id = ?').run(name, target.id, b.top.id)
@@ -168,6 +169,7 @@ export function restoreFromTrash(s: Services, actor: SessionUser, a: Access, fil
       detail: { fileId: b.top.id, name, parentId: target.id, count: restored.length } })
     return { top: { ...restored.find(r => r.id === b.top.id)!, deletedAt: null }, mainRestored, treeVersion: touchProject(s.db, a.projectId, true) }
   }).immediate()
+  s.history.noteChange(a.projectId, actor.id)
   s.collab.broadcast(a.projectId, { type: 'tree-changed', treeVersion: res.treeVersion })
   s.collab.broadcast(a.projectId, { type: 'trash-changed' })
   if (res.mainRestored) s.collab.broadcast(a.projectId, { type: 'project-changed' })

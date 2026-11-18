@@ -17,7 +17,11 @@ import { createLimiters, DEFAULT_RATE_LIMITS, type Limiters, type RateLimitConfi
 import { BlobStore } from './files/blobStore.ts'
 import { DEFAULT_LIMITS, type Limits, type Services } from './services.ts'
 import { seedDev } from './dev/seed.ts'
+import { createHistory, type HistoryConfig } from './history/history.ts'
 import { readCookie, SESSION_COOKIE, sessionForToken } from './auth/sessions.ts'
+import { createRebuilder, DEFAULT_REBUILD, type RebuildConfig, type Rebuilder } from './collab/rebuild.ts'
+import type { GcConfig } from './maintenance/gc.ts'
+import { createMaintenance, type Maintenance } from './maintenance/maintenance.ts'
 
 export interface LigatureConfig {
   dataDir: string
@@ -42,12 +46,18 @@ export interface LigatureConfig {
   compileQueuePerUser?: number
   /** Builds running at once (default: half the CPUs, at least 1). */
   compileConcurrency?: number
-  /** Clock for the trash retention sweep (tests use a fake one). */
+  /** Clock for the trash retention sweep and the version history (tests use a fake one). */
   clock?: () => number
+  /** Version history timings and retention (docs/M3.md §1). */
+  history?: Partial<HistoryConfig>
   /** How often the trash retention sweep runs (default hourly; it also runs at startup). */
   trashSweepMs?: number
   /** Parsed SyncTeX cache bounds (default 8 builds, 3M records). */
   synctexCache?: SynctexCacheOptions
+  /** Garbage collection: grace period, project retention, schedule (docs/M3.md §3). */
+  gc?: Partial<GcConfig>
+  /** Oversized-doc rebuild thresholds (docs/M3.md §4). */
+  rebuild?: Partial<RebuildConfig>
 }
 
 export interface WsLimits {
@@ -78,6 +88,10 @@ export interface Ligature extends Services {
   compiler: CompilerClient
   /** Purge trash batches past their retention (runs at startup and every `trashSweepMs`). */
   sweepTrash(now?: number): Promise<number>
+  /** Blob GC, retention, storage report (docs/M3.md §3, §5). */
+  maintenance: Maintenance
+  /** Oversized-doc rebuild (docs/M3.md §4). */
+  rebuilder: Rebuilder
   /** Resolves once listening. */
   listening: Promise<void>
   /** Flush documents and close everything (does not exit the process). */
@@ -97,24 +111,30 @@ function toRequest(req: IncomingMessage): Request {
 export function startLigature(cfg: LigatureConfig): Ligature {
   const db: DB = openDb(join(cfg.dataDir, 'app.db'))
   const store = new DocStore(db)
-  const recovered = store.recoverAll()
-  if (recovered) console.log(`[startup] recovered ${recovered} doc(s) from the update log`)
-  if (cfg.seed) seedDev(db, store)
-
   const collab = createCollab(db, store, cfg.sessionCheckMs !== undefined ? { sessionCheckMs: cfg.sessionCheckMs } : {})
   const blobs = new BlobStore(db, join(cfg.dataDir, 'blobs'))
+  const limits: Limits = { ...DEFAULT_LIMITS, ...cfg.limits }
+  const clock = cfg.clock ?? Date.now
+  const history = createHistory({ db, store, collab, blobs, limits }, { clock, ...(cfg.history ? { config: cfg.history } : {}) })
+  collab.setChangeHooks(history.docHooks)
+  // Oversized docs are rebuilt when compacted with nobody connected: on unload, and in startup recovery.
+  const rebuilder = createRebuilder({ db, store, collab, isBusy: id => history.isBusy(id) }, { ...DEFAULT_REBUILD, ...cfg.rebuild })
+  collab.setCompactionHook((name, c) => { rebuilder.afterCompaction(name, c, true) })
+  const recovered = store.recoverAll((name, c) => { rebuilder.afterCompaction(name, c, false) })
+  if (recovered) console.log(`[startup] recovered ${recovered} doc(s) from the update log`)
+  if (cfg.seed) seedDev(db, store)
   const compiler = new CompilerClient(cfg.compilerUrl)
-  const orchestrator = new CompileOrchestrator(db, store, collab, compiler, join(cfg.dataDir, 'outputs'), blobs.dir, {
+  const outputsDir = join(cfg.dataDir, 'outputs')
+  const orchestrator = new CompileOrchestrator(db, store, collab, compiler, outputsDir, blobs.dir, {
     concurrency: cfg.compileConcurrency ?? Math.max(1, Math.floor(availableParallelism() / 2)),
     maxQueue: cfg.compileQueueLimit ?? DEFAULT_MAX_COMPILE_QUEUE,
     ...(cfg.compileQueuePerUser !== undefined ? { maxQueuePerUser: cfg.compileQueuePerUser } : {}),
     ...(cfg.synctexCache ? { synctexCache: cfg.synctexCache } : {}),
+    onSuccess: projectId => { history.onCompileSuccess(projectId) },
   })
-  const limits: Limits = { ...DEFAULT_LIMITS, ...cfg.limits }
 
   // Trash retention: sweep at startup and periodically.
-  const clock = cfg.clock ?? Date.now
-  const services: Services = { db, store, collab, blobs, limits }
+  const services: Services = { db, store, collab, blobs, limits, history }
   const sweepTrash = (now = clock()) => sweepTrashBatches(services, now)
   const runSweep = () => {
     if (!db.open) return
@@ -124,11 +144,16 @@ export function startLigature(cfg: LigatureConfig): Ligature {
   runSweep()
   const sweepTimer = setInterval(runSweep, cfg.trashSweepMs ?? 60 * 60 * 1000)
   sweepTimer.unref()
+  // Version scheduler: a first pass now (pre-M3 projects get their first version), then every 30 s.
+  history.start()
+  // Daily GC (blobs, orphan docs, purged projects, thinning, trash retention).
+  const maintenance = createMaintenance({ services, outputsDir, clock, ...(cfg.gc ? { config: cfg.gc } : {}) })
+  maintenance.start()
   const limiters = createLimiters({ ...DEFAULT_RATE_LIMITS, ...cfg.rateLimits })
 
   const webDistDir = cfg.webDistDir && existsSync(join(cfg.webDistDir, 'index.html')) ? cfg.webDistDir : null
   const app = createApp({
-    db, store, collab, blobs, limits, limiters, compile: orchestrator,
+    db, store, collab, blobs, limits, history, limiters, compile: orchestrator, maintenance, rebuilder,
     isAllowedOrigin: cfg.isAllowedOrigin, devLogin: cfg.devLogin, secureCookies: cfg.production,
     trustProxy: cfg.trustProxy, webDistDir,
   })
@@ -194,11 +219,14 @@ export function startLigature(cfg: LigatureConfig): Ligature {
 
   let stopped = false
   return {
-    db, store, collab, blobs, limits, limiters, server, app, orchestrator, compiler, listening, sweepTrash,
+    db, store, collab, blobs, limits, history, limiters, server, app, orchestrator, compiler, listening, sweepTrash,
+    maintenance, rebuilder,
     async stop() {
       if (stopped) return
       stopped = true
       clearInterval(sweepTimer)
+      await maintenance.stop()
+      history.stop() // changes are still noted while shutting down; dirty projects are versioned at the next start
       await orchestrator.synctex.close()
       for (const c of [...wssAuthed.clients, ...wssAnon.clients]) c.terminate()
       await collab.shutdown()

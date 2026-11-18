@@ -69,6 +69,12 @@ src/
   lib/autoCompile.ts         auto-compile scheduler (2.5 s after local edits, one at a time, back-off on 429/503) + per-project toggle
   lib/pdfCoords.ts           PDF points <-> page pixels at any zoom (SyncTeX), zoom steps
   lib/zipImport.ts           zip import name + report shown when the new project opens
+  lib/recovery.ts            M3 §4: which local edits the server never acknowledged (SyncTracker), dialog-or-silent-reopen
+                             decision after a doc rebuild (new epoch), Copy my text
+  lib/RecoveryDialog.svelte  "Your latest changes could not be merged automatically": local vs server text (merge view)
+  lib/mergeView.ts           read-only side-by-side @codemirror/merge setup (history comparison + recovery dialog)
+  lib/storage.ts             M3 §5: byte/duration formatting, project table sorting, totals, GC report texts
+  lib/StorageSection.svelte  admin page "Storage": totals, sortable per-project table, last GC report, Run GC now
 ```
 
 ## Deploying the build

@@ -5,10 +5,11 @@ import * as Y from 'yjs'
 import { ENGINES, fileDocName, isValidRelPath, type BuildResult, type Diagnostic, type Engine, type Manifest } from '@ligature/shared'
 import type { DB } from '../db/index.ts'
 import type { Collab } from '../collab/collab.ts'
-import { TEXT_KEY, type DocStore } from '../collab/docStore.ts'
+import type { DocStore } from '../collab/docStore.ts'
 import { ApiError } from '../errors.ts'
 import { detectMainFile } from '../files/mainFile.ts'
-import { filePaths, liveFiles, projectEngine } from '../projects/repo.ts'
+import { projectEngine } from '../projects/repo.ts'
+import { readProjectContent } from '../collab/barrier.ts'
 import { buildDir, latestBuildRecord, writeBuildRecord, type BuildRecord } from './builds.ts'
 import type { CompilerClient } from './compilerClient.ts'
 import { computeDiagnostics, mergeDiagnostics } from './diagnostics.ts'
@@ -47,6 +48,8 @@ export interface OrchestratorOptions {
   maxQueuePerUser?: number
   /** Parsed SyncTeX indexes kept in memory (docs/M2.md §3). */
   synctexCache?: SynctexCacheOptions
+  /** Called after a build finished with status `success` (the history takes a compile version). */
+  onSuccess?: (projectId: string) => void
 }
 
 export const DEFAULT_MAX_COMPILE_QUEUE = 20
@@ -77,6 +80,7 @@ export class CompileOrchestrator {
   private readonly inflight = new Map<string, { running: Promise<BuildResult>; next: Promise<BuildResult> | null }>()
   /** SyncTeX queries against stored builds, with the per-build index cache (docs/M2.md §3). */
   readonly synctex: SynctexCache
+  private readonly onSuccess: ((projectId: string) => void) | undefined
 
   constructor(
     private readonly db: DB,
@@ -91,6 +95,7 @@ export class CompileOrchestrator {
     this.maxQueue = Math.max(0, opts.maxQueue)
     this.maxQueuePerUser = Math.max(1, opts.maxQueuePerUser ?? DEFAULT_MAX_COMPILE_QUEUE_PER_USER)
     this.synctex = new SynctexCache(outputsDir, opts.synctexCache)
+    this.onSuccess = opts.onSuccess
   }
 
   /** Number of builds waiting for a compile slot. */
@@ -140,9 +145,9 @@ export class CompileOrchestrator {
   snapshot(projectId: string): Snapshot {
     const proj = projectEngine(this.db, projectId)
     if (!proj) throw new Error('project not found')
-    const treeVersion = (this.db.prepare('SELECT tree_version AS v FROM projects WHERE id = ?').get(projectId) as { v: number }).v
-    const files = liveFiles(this.db, projectId)
-    const filePathById = filePaths(files)
+    const content = readProjectContent(this.db, this.store, this.collab, projectId)
+    const treeVersion = content.treeVersion
+    const filePathById = content.paths
     const manifest: Manifest = {}
     const textBlobs = new Map<string, Buffer>()
     const binaryHashes = new Set<string>()
@@ -150,28 +155,21 @@ export class CompileOrchestrator {
     const docSnapshots: Record<string, string> = {}
     const paths: Record<string, string> = {}
     const texts: { path: string; text: string; id: string }[] = []
-    for (const f of files) {
-      const path = filePathById.get(f.id)
-      if (!path) continue
+    for (const f of content.files) {
+      const path = f.path
       if (!isValidRelPath(path)) throw new Error(`invalid path in tree: ${JSON.stringify(path)}`)
       if (f.kind === 'text') {
-        const name = fileDocName(projectId, f.id, f.epoch)
-        const live = this.collab.liveDoc(name)
-        let text: string
-        if (live) {
-          text = live.getText(TEXT_KEY).toString()
-          stateVectors[f.id] = Buffer.from(Y.encodeStateVector(live)).toString('base64')
-          docSnapshots[f.id] = Buffer.from(Y.encodeSnapshot(Y.snapshot(live))).toString('base64')
-        } else {
-          text = this.store.storedText(name)?.text ?? ''
+        if (f.live) {
+          stateVectors[f.id] = Buffer.from(Y.encodeStateVector(f.live)).toString('base64')
+          docSnapshots[f.id] = Buffer.from(Y.encodeSnapshot(Y.snapshot(f.live))).toString('base64')
         }
-        const buf = Buffer.from(text, 'utf8')
+        const buf = Buffer.from(f.text, 'utf8')
         const h = sha256(buf)
         manifest[path] = h
         textBlobs.set(h, buf)
         paths[path] = f.id
-        texts.push({ path, text, id: f.id })
-      } else if (f.kind === 'binary' && f.blobHash) {
+        texts.push({ path, text: f.text, id: f.id })
+      } else {
         manifest[path] = f.blobHash
         binaryHashes.add(f.blobHash)
         paths[path] = f.id
@@ -243,6 +241,9 @@ export class CompileOrchestrator {
       }
       writeBuildRecord(this.outputsDir, projectId, record)
       this.collab.broadcast(projectId, { type: 'compile-finished', buildId, status })
+      if (status === 'success' && this.onSuccess) {
+        try { this.onSuccess(projectId) } catch (e) { console.error('[compile] after-success hook failed', e) }
+      }
       const { paths: _paths, finishedAt: _finishedAt, ...result } = record
       return result
     } finally {

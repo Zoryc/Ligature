@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import type { AdminUser, InstanceSettings } from '@ligature/shared'
+import type { AdminUser, GcReport, InstanceSettings, RebuildDocResponse, StorageReport } from '@ligature/shared'
 import { audit } from '../../audit.ts'
 import { ApiError, notFound } from '../../errors.ts'
 import { hashPassword, isAcceptablePassword } from '../../auth/password.ts'
@@ -92,6 +92,24 @@ export function adminRoutes(deps: RouteDeps): Hono<Env> {
     const after = setSettings(db, { registration: body.registration as InstanceSettings['registration'] })
     audit(db, { actorId: c.get('user').id, action: 'settings-update', detail: { before, after } })
     return c.json(after satisfies InstanceSettings)
+  })
+
+  /* ---- storage (docs/M3.md §3–§5) ---- */
+
+  /** Audited as `storage.view` (docs/M3.md §5: both storage routes are audited). */
+  app.get('/admin/storage', c => {
+    const report = deps.maintenance.storage()
+    audit(db, { actorId: c.get('user').id, action: 'storage.view' })
+    return c.json(report satisfies StorageReport)
+  })
+
+  /** Runs the GC now (or joins the run in progress) and returns its report. Audited as `gc.run`. */
+  app.post('/admin/gc', async c => c.json(await deps.maintenance.runGc({ actorId: c.get('user').id }) satisfies GcReport))
+
+  /** Rebuild one text file's doc (new epoch); `409 doc-in-use` while anyone has it open. Audited as `doc.rebuild`. */
+  app.post('/admin/files/:fileId/rebuild', c => {
+    const r = deps.rebuilder.rebuildFile(c.req.param('fileId'), c.get('user').id)
+    return c.json({ fileId: r.fileId, epoch: r.toEpoch, stateBytesBefore: r.stateBytesBefore, stateBytesAfter: r.stateBytesAfter } satisfies RebuildDocResponse)
   })
 
   return app

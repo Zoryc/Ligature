@@ -1,13 +1,15 @@
 import { readdirSync } from 'node:fs'
+import { basename } from 'node:path'
 import { connect as netConnect, type Socket } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
 import { fileDocName, type ProjectDetail } from '@ligature/shared'
 import { auditEntries } from '../src/audit.ts'
 import { sha256 } from '../src/auth/sessions.ts'
-import { openDb } from '../src/db/index.ts'
+import { openDb, type DB } from '../src/db/index.ts'
 import { BlobStore } from '../src/files/blobStore.ts'
 import { deleteNode } from '../src/files/tree.ts'
+import { versionBlobHashes } from '../src/history/store.ts'
 import { uploadFile } from '../src/files/upload.ts'
 import { isUploadRoute } from '../src/http/app.ts'
 import { RateLimiter } from '../src/http/rateLimit.ts'
@@ -47,8 +49,11 @@ async function login(base: string, username: string): Promise<Client> {
 
 const count = (statuses: number[]) => statuses.reduce<Record<number, number>>((m, s) => ({ ...m, [s]: (m[s] ?? 0) + 1 }), {})
 
-function blobFiles(dir: string): number {
-  return readdirSync(dir, { recursive: true, withFileTypes: true }).filter(d => d.isFile() && !d.name.startsWith('.tmp')).length
+/** Blob files on disk, not counting the text snapshots of versions (M3: the first change takes a version). */
+function blobFiles(dir: string, db?: DB): number {
+  const versions = db ? versionBlobHashes(db) : new Set<string>()
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter(d => d.isFile() && !d.name.startsWith('.tmp') && !versions.has(`${basename(d.parentPath)}${d.name}`)).length
 }
 
 /** A raw HTTP/1.1 upload whose body the test feeds by hand. */
@@ -194,11 +199,11 @@ describe('blobs are written only for accepted uploads (review: sec 3)', () => {
       await owner.upload(p.id, p.rootId, 'bad/name.png', png), // invalid name
     ]
     expect(refused.map(r => r.status)).toEqual([400, 409, 409, 413, 400])
-    expect(blobFiles(dir)).toBe(0)
-    expect(ts.lig.db.prepare('SELECT COUNT(*) AS n FROM blobs').get()).toEqual({ n: 0 })
+    expect(blobFiles(dir, ts.lig.db)).toBe(0)
+    expect(ts.lig.db.prepare('SELECT COUNT(*) AS n FROM blobs WHERE hash NOT IN (SELECT blob_hash FROM version_files)').get()).toEqual({ n: 0 })
 
     expect((await owner.upload(p.id, p.rootId, 'a.png', png)).status).toBe(200)
-    expect(blobFiles(dir)).toBe(1)
+    expect(blobFiles(dir, ts.lig.db)).toBe(1)
   })
 
   it('discardUnrecorded removes a blob whose recording rolled back, never a recorded one', () => {
@@ -231,7 +236,7 @@ describe('blobs are written only for accepted uploads (review: sec 3)', () => {
     const third = await owner.upload(p.id, p.rootId, 'x.bin', blob(3))
     expect(third.status).toBe(429)
     expect(third.body.error).toBe('rate-limited')
-    expect(blobFiles(ts.lig.blobs.dir)).toBe(2)
+    expect(blobFiles(ts.lig.blobs.dir, ts.lig.db)).toBe(2)
     expect((await other.upload(q.id, q.rootId, 'x.bin', blob(4))).status).toBe(200)
   })
 })
@@ -254,7 +259,7 @@ describe('upload memory and concurrency (review: sec 4)', () => {
     await waitFor(() => ts.lig.limiters.uploadGate.stats.active === 0, 5_000, 'slots released')
     await sleep(100)
     expect(errors.mock.calls.filter(c => String(c[0]).includes('unhandled'))).toEqual([])
-    expect(blobFiles(ts.lig.blobs.dir)).toBe(0)
+    expect(blobFiles(ts.lig.blobs.dir, ts.lig.db)).toBe(0)
   })
 
   it('uploads beyond the per-user concurrency wait for a slot instead of being buffered', async () => {

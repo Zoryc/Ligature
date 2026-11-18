@@ -45,7 +45,8 @@ describe('file tree', () => {
     expect(ch).toMatchObject({ kind: 'text', epoch: 1 })
     expect((await owner.get(`/api/projects/${p.id}/files/${ch.id}/raw`)).body).toBe('Hello\nworld\n')
     await waitFor(() => meta.events().filter(e => e.type === 'tree-changed').length === 2, 5_000, 'tree-changed events')
-    expect(meta.events().map(e => e.treeVersion)).toEqual([1, 2])
+    // (M3: the first change also takes a version of the original state: `versions-changed`)
+    expect(meta.events().filter(e => e.type === 'tree-changed').map(e => e.treeVersion)).toEqual([1, 2])
     expect((await project(owner, p.id)).treeVersion).toBe(2)
 
     expect((await mk(ed, p, p.rootId, 'chapter.tex', 'text')).body.error).toBe('name-taken')

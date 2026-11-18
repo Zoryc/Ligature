@@ -11,6 +11,7 @@ import { fileRoutes } from './routes/files.ts'
 import { trashRoutes } from './routes/trash.ts'
 import { zipRoutes } from './routes/zip.ts'
 import { synctexRoutes } from './routes/synctex.ts'
+import { versionRoutes } from './routes/versions.ts'
 import { serveSpa } from './static.ts'
 
 export interface AppDeps extends RouteDeps {
@@ -71,6 +72,7 @@ export function createApp(deps: AppDeps) {
   app.route('/api', trashRoutes(deps))
   app.route('/api', zipRoutes(deps))
   app.route('/api', synctexRoutes(deps))
+  app.route('/api', versionRoutes(deps))
 
   app.all('/api/*', c => c.json({ error: 'not-found' }, 404))
 
