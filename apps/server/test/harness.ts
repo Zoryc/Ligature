@@ -1,0 +1,102 @@
+import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import WebSocket from 'ws'
+import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider'
+import * as Y from 'yjs'
+import type { ProjectDetail } from '@ligature/shared'
+
+const SERVER_DIR = resolve(import.meta.dirname, '..')
+export const ORIGIN = 'http://localhost:5173'
+
+export function tempDataDir(): string {
+  return mkdtempSync(join(tmpdir(), 'ligature-test-'))
+}
+
+export interface RunningServer { proc: ChildProcess; port: number; base: string; output: () => string }
+
+/** Start the real server as a child process (node + tsx loader, so SIGKILL hits the server itself). */
+export async function startServer(dataDir: string, port: number): Promise<RunningServer> {
+  const proc = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
+    cwd: SERVER_DIR,
+    env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATA_DIR: dataDir, COMPILER_URL: 'http://127.0.0.1:1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let out = ''
+  proc.stdout!.on('data', d => { out += d })
+  proc.stderr!.on('data', d => { out += d })
+  const base = `http://127.0.0.1:${port}`
+  const deadline = Date.now() + 20_000
+  while (Date.now() < deadline) {
+    if (proc.exitCode !== null) throw new Error(`server exited early:\n${out}`)
+    try { if ((await fetch(`${base}/api/health`)).ok) return { proc, port, base, output: () => out } } catch { /* not up yet */ }
+    await sleep(100)
+  }
+  proc.kill('SIGKILL')
+  throw new Error(`server did not start:\n${out}`)
+}
+
+export async function killHard(s: RunningServer): Promise<void> {
+  if (s.proc.exitCode !== null || s.proc.signalCode !== null) return
+  const exited = new Promise(r => s.proc.once('exit', r))
+  s.proc.kill('SIGKILL')
+  await exited
+}
+
+export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+export async function login(base: string, username: string): Promise<string> {
+  const r = await fetch(`${base}/api/dev/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: ORIGIN }, body: JSON.stringify({ username }),
+  })
+  if (!r.ok) throw new Error(`login failed ${r.status}`)
+  const cookie = r.headers.get('set-cookie')!.split(';')[0]!
+  return cookie
+}
+
+export async function getJson<T>(base: string, path: string, cookie: string): Promise<T> {
+  const r = await fetch(`${base}${path}`, { headers: { cookie } })
+  if (!r.ok) throw new Error(`GET ${path} -> ${r.status}`)
+  return r.json() as Promise<T>
+}
+
+export async function demoProject(base: string, cookie: string): Promise<ProjectDetail> {
+  const list = await getJson<{ id: string }[]>(base, '/api/projects', cookie)
+  return getJson<ProjectDetail>(base, `/api/projects/${list[0]!.id}`, cookie)
+}
+
+/** A Node Hocuspocus client that authenticates with the session cookie, like a browser would. */
+export function connect(base: string, cookie: string, docName: string) {
+  const Polyfill = class extends WebSocket {
+    constructor(url: string, protocols?: string | string[]) {
+      super(url, protocols, { headers: { cookie, origin: ORIGIN } })
+    }
+  }
+  const socket = new HocuspocusProviderWebsocket({
+    url: base.replace('http', 'ws') + '/collab',
+    WebSocketPolyfill: Polyfill,
+    delay: 100, minDelay: 100, maxDelay: 500, factor: 1.2, jitter: false,
+  })
+  const doc = new Y.Doc()
+  let denied: string | null = null
+  const provider = new HocuspocusProvider({
+    websocketProvider: socket, name: docName, document: doc, token: '',
+    onAuthenticationFailed: ({ reason }) => { denied = reason },
+  })
+  provider.attach()
+  return {
+    doc, provider, socket,
+    text: () => doc.getText('content'),
+    denied: () => denied,
+    destroy: () => { provider.destroy(); socket.destroy() },
+  }
+}
+
+export async function waitFor(cond: () => boolean, timeoutMs = 10_000, what = 'condition'): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
+    await sleep(25)
+  }
+}

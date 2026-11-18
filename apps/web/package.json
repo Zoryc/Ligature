@@ -1,0 +1,24 @@
+{
+  "name": "@ligature/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/legacy-modes": "^6.5.5",
+    "@hocuspocus/provider": "~4.8.0",
+    "@ligature/shared": "*",
+    "codemirror": "^6.0.2",
+    "y-codemirror.next": "~0.3.6",
+    "yjs": "~13.6.33"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.3",
+    "vite": "^8.3.8"
+  }
+}
