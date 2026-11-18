@@ -92,6 +92,9 @@ export function listProcesses(): ProcInfo[] {
       try {
         const cmd = readFileSync(`/proc/${name}/cmdline`, 'latin1').replace(/\0/g, ' ').trim()
         const status = readFileSync(`/proc/${name}/status`, 'latin1')
+        // A zombie has already exited and holds no resources; it only waits for its parent (or init) to reap
+        // it. Where PID 1 does not reap (e.g. a CI job container without --init) they linger, harmlessly.
+        if (/^State:\s+Z/m.test(status)) continue
         const uid = /^Uid:\s+(\d+)/m.exec(status)
         out.push({ pid: Number(name), uid: uid ? Number(uid[1]) : null, cmd: cmd || safeReadlink(`/proc/${name}/exe`) })
       } catch { /* exited meanwhile */ }

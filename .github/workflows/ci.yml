@@ -57,6 +57,10 @@ jobs:
       # CI=true (set by GitHub) makes tests that need TeX / POSIX fail instead of skipping
       # (apps/compiler/test/ciPrerequisites.test.ts, corpus.test.ts).
       - name: Tests
+        env:
+          # Ubuntu's TeX Live 2023 behaves differently from production (TL 2026) and there is no sandbox
+          # here, so the malicious-TeX corpus runs only in the `sandbox` job.
+          CORPUS_SKIP_REASON: runs in the sandbox job (production TeX Live + uid sandbox)
         run: npm test
 
       - name: Web build
@@ -70,6 +74,8 @@ jobs:
     timeout-minutes: 45
     container:
       image: texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee
+      # An init as PID 1 reaps orphaned processes, like tini in the production compiler image.
+      options: --init
     steps:
       - uses: actions/checkout@v6
 
@@ -145,8 +151,16 @@ jobs:
             docker buildx imagetools inspect "${img%@*}" | sed -n 1,3p
           done
 
+      # On failure, the end of the build log is also published as an error annotation, which (unlike raw logs)
+      # can be read without signing in to GitHub.
       - name: Build the images (compiler with the medium scheme)
-        run: docker compose build
+        run: |
+          set -o pipefail
+          if ! docker compose build --progress=plain 2>&1 | tee /tmp/build.log; then
+            msg="$(tail -n 60 /tmp/build.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+            echo "::error title=docker compose build failed::${msg}"
+            exit 1
+          fi
 
       - name: Start the stack and wait until healthy
         run: docker compose up -d --wait --wait-timeout 300
@@ -158,7 +172,9 @@ jobs:
         if: failure()
         run: |
           docker compose ps -a
-          docker compose logs --no-color --tail=300
+          docker compose logs --no-color --tail=300 | tee /tmp/compose.log
+          msg="$(tail -n 60 /tmp/compose.log | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+          echo "::error title=docker compose logs (tail)::${msg}"
 
       - name: Stop
         if: always()

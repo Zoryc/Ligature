@@ -10,7 +10,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { chownSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chownSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -190,8 +190,11 @@ function suite() {
     const r = await compile(base, id, { 'main.tex': '\\documentclass{article}\\begin{document}\\def\\x{\\x}\\x\\end{document}\n' }, { timeoutMs: 3000 })
     expect(r.json.status).toBe('timeout')
     const uid = statSync(join(builds, id)).uid
+    // Zombies (state Z) have exited already; they only wait to be reaped by init, so they don't count.
     const left = readdirSync('/proc').filter(n => /^\d+$/.test(n)).filter(n => {
-      try { return statSync(`/proc/${n}`).uid === uid } catch { return false }
+      try {
+        return statSync(`/proc/${n}`).uid === uid && !/^State:\s+Z/m.test(readFileSync(`/proc/${n}/status`, 'latin1'))
+      } catch { return false }
     })
     expect(left).toEqual([])
   }, 60_000)

@@ -16,7 +16,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lchownSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { deflateSync, gunzipSync } from 'node:zlib'
@@ -79,7 +79,15 @@ const TEX_LIVE = (() => {
 const PRIVATE_GUARDED = UID || TEX_GUARDS_READS
 const NO_PRIVATE_GUARD = 'needs the uid sandbox here: this TeX Live\'s kpathsea does not apply openin_any to reading (TeX Live 2026 and later)'
 
-if (WHY_NOT !== null && (UID || IN_CI)) {
+/**
+ * Explicit opt-out for SANDBOX=none runs (never honoured with SANDBOX=uid): CI's `test` job sets it, because the
+ * corpus is meaningful only with the production TeX Live and the uid sandbox, which the `sandbox` job runs.
+ */
+const OPT_OUT = !UID ? process.env.CORPUS_SKIP_REASON : undefined
+
+if (OPT_OUT) {
+  describe.skip(`malicious-TeX corpus (SANDBOX=none; skipped: ${OPT_OUT})`, corpus)
+} else if (WHY_NOT !== null && (UID || IN_CI)) {
   describe(`malicious-TeX corpus (SANDBOX=${MODE})`, () => {
     it('has its prerequisites', () => { throw new Error(`the corpus cannot run: ${WHY_NOT}`) })
   })
@@ -519,9 +527,34 @@ function corpus() {
       }), 'main.tex', 'lualatex')
     }, TEX_TIMEOUT)
 
+    /**
+     * If TeX itself could not plant the links (e.g. LuaTeX's lfs.link is unavailable or refused, which is good),
+     * the worker's defence must still be tested: on POSIX the harness plants the same links in out/, owned by the
+     * project uid, exactly as a document that managed it would have left them.
+     */
+    let plantedByHarness = false
+    const plantWithHarness = (): boolean => {
+      if (process.platform === 'win32') return false
+      const out = join(builds, id, 'out')
+      if (!existsSync(out)) return false
+      const owner = statSync(join(builds, id))
+      const links: [string, string][] = [[targets[0]!, 'output.pdf'], [targets[1]!, 'output.synctex.gz'],
+        [UID ? join(builds, '.blobs') : join(outside, 'decoydir'), 'chapters']]
+      for (const [target, name] of links) {
+        const p = join(out, name)
+        rmSync(p, { force: true, recursive: true })
+        symlinkSync(target, p)
+        if (UID) lchownSync(p, owner.uid, owner.gid)
+      }
+      console.warn(`[corpus] case 10: TeX could not create symlinks (${planted.probes.get('link output.pdf') ?? 'no probe'}); ` +
+        'planted them from the test harness instead, to test the worker\'s defence')
+      return true
+    }
+
     /** Linux CI must exercise this case: a skip there would hide that it went untested. */
     const plantedOrSkip = (skip: (note?: string) => void) => {
-      if (planted.probes.get('link output.pdf') === 'CREATED') return true
+      if (planted.probes.get('link output.pdf') === 'CREATED' || plantedByHarness) return true
+      if (plantWithHarness()) { plantedByHarness = true; return true }
       const why = `could not create symlinks here: ${planted.probes.get('link output.pdf') ?? 'no probe output'}`
       if (IN_CI && process.platform === 'linux') throw new Error(`case 10 cannot run on Linux CI: ${why}\n--- log tail ---\n${planted.log.slice(-3000)}`)
       skip(why)
