@@ -165,9 +165,13 @@ describe('GC runs', () => {
   it('never runs twice at once; the last report is persisted and audited', async () => {
     const port = 39205
     const { ts, admin } = await setup(port)
-    const [r1, r2] = await Promise.all([admin.post<GcReport>('/api/admin/gc'), admin.post<GcReport>('/api/admin/gc')])
-    expect(r1.status).toBe(200)
-    expect(r2.body).toEqual(r1.body)
+    // A second request while a run is in progress joins it. Two HTTP requests can't prove that reliably (a fast
+    // machine finishes the first run before the second request arrives), so call the service twice in one tick.
+    const me = (await admin.get<{ id: string }>('/api/me')).body
+    const p1 = ts.lig.maintenance.runGc({ actorId: me.id })
+    const p2 = ts.lig.maintenance.runGc({ actorId: me.id })
+    expect(p2).toBe(p1)
+    const r1 = { status: 200, body: await p1 }
     expect(auditEntries(ts.lig.db, 'gc.run')).toHaveLength(1)
     expect(auditEntries(ts.lig.db, 'gc.run')[0]).toMatchObject({ actorId: expect.any(String), detail: { trigger: 'admin', blobsRemoved: 0 } })
     expect(ts.lig.maintenance.isRunning()).toBe(false)

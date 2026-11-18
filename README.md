@@ -46,3 +46,7 @@ The compiler's real-TeX tests run automatically when `latexmk` is on `PATH`.
 ## License
 
 MIT
+
+> **Running the tests on Linux:** the server and compiler tests listen on fixed ports 39100–39999, inside Linux's
+> default range for outgoing connections (32768–60999), which can rarely cause `EADDRINUSE`. CI moves that range
+> (`net.ipv4.ip_local_port_range = 50000 65000`); do the same locally if you see it.

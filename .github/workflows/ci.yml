@@ -22,13 +22,16 @@ jobs:
   # Pulling it from Docker Hub has been reliable; Ubuntu's apt mirror repeatedly stalled for 45+ minutes.
   # Steps run as root in the container, but several tests (SANDBOX=none compiles) refuse root, so the
   # test steps run as an unprivileged user `ci`.
+  # Both test containers move Linux's ephemeral (outgoing) port range to 50000-65000: the tests listen on fixed
+  # ports in 391xx-399xx, which the default range (32768-60999) overlaps, so an outgoing connection could
+  # occasionally take a port a later test wants to listen on (EADDRINUSE). Windows' default range is 49152+.
   test:
     name: test
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     container:
       image: texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee
-      options: --init
+      options: --init --sysctl net.ipv4.ip_local_port_range="50000 65000"
     steps:
       - uses: actions/checkout@v6
 
@@ -81,7 +84,7 @@ jobs:
     container:
       image: texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee
       # An init as PID 1 reaps orphaned processes, like tini in the production compiler image.
-      options: --init
+      options: --init --sysctl net.ipv4.ip_local_port_range="50000 65000"
     steps:
       - uses: actions/checkout@v6
 
