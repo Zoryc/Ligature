@@ -2,9 +2,10 @@
 
 A self-hostable, real-time collaborative LaTeX editor with user accounts.
 
-> Status: **M0 (technical spike) done** — live co-editing, durable sync, and real compiles work locally.
-> Not ready for real use yet (no real accounts/passwords, no file management). See [docs/PLAN.md](docs/PLAN.md)
-> for the architecture and roadmap, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
+> Status: **M1 done** — accounts, projects with members and invite links, file tree with uploads, live co-editing,
+> sandboxed compiles, Docker deployment ([docker/README.md](docker/README.md)). Early software: expect rough edges.
+> See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, [docs/M1.md](docs/M1.md) for the current
+> API contract, and [docs/SYNC.md](docs/SYNC.md) for the sync-model research.
 
 ## Try it locally (Windows, macOS, Linux)
 
@@ -18,7 +19,8 @@ npm run dev:server                # API + collaboration server on 127.0.0.1:3000
 npm run dev:web                   # web UI on http://localhost:5173
 ```
 
-Open http://localhost:5173 and log in as `alice` (owner), `bob` (editor) or `carol` (viewer).
+Open http://localhost:5173 and log in as `alice` (owner, admin), `bob` (editor) or `carol` (viewer) —
+in development they all have the password `ligature-dev-password`.
 To be two users at once in one browser, use a second tab at http://bob.localhost:5173 —
 each `*.localhost` host has its own login cookie.
 

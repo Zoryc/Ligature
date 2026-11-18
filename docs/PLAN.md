@@ -393,3 +393,36 @@ Sync design research and the alternatives considered: [SYNC.md](SYNC.md).
 - The `uid` sandbox (setuid helper, chown, prlimit, reaping) has never run; it needs Linux as root.
 - Docker images are unbuilt; the Island of TeX `TL2026` tag and image sizes are unconfirmed; font caches with `TEXMFVAR` inside the project need checking.
 - Known window: up to ~200 ms of acknowledged edits live only in the write buffer; if the server is killed *and* every client holding them is gone, they are lost (clients re-send them on reconnect otherwise). `y-indexeddb` (M5+) closes it.
+
+## 13. M1 results (2026-11-18)
+
+**Done-criteria met.** Verified in the browser: password login, project creation, upload of a PNG and a `.bib`,
+a compile with the image and a bibtex-resolved citation, an invite link accepted by a second user (logged out ->
+log in -> back to the invite -> joined), and removal of that member kicking their open editor immediately.
+CI on Linux (GitHub Actions): the `uid` sandbox and the 12-case malicious-TeX corpus run **as root** with the
+production TeX Live 2026 image and pass; both Docker images build and a smoke test drives signup, project, upload,
+compile, PDF download and the `ligature` CLI through the real API. Locally ~470 tests pass.
+
+**Resolved from M0's unverified list:** the `uid` sandbox works on Linux; Docker images build
+(`texlive/texlive:latest-full` / `latest-medium`, pinned by digest); the TeX Live 2026 font cache works with a
+per-project `TEXMFVAR` when it is pre-generated system-wide.
+
+**Decisions taken in M1** (see `docs/M1.md` for the full contract)
+- Usernames instead of emails (no SMTP needed yet). Sibling file names are unique case-insensitively.
+- Text uploads are normalised to `\n` line endings and lose a UTF-8 BOM (a `\r` would desynchronise CodeMirror and Yjs).
+- An admin cannot remove their own admin flag or disable themselves (`409 last-admin`).
+- Role changes close the user's live connections too; they reconnect with the new role (e.g. read-only).
+- The compiler runs TeX with `max_print_line=10000` so logs are not wrapped (needed for `file:line` parsing).
+
+**Security findings (documented, tested as KNOWN GAPS in CI)**
+- TeX Live 2026's kpathsea no longer applies `openin_any` to reading, and LuaTeX's `io` library ignores it anyway,
+  so a document can **read world-readable files** of the compiler container (e.g. `/etc/passwd`). The container holds
+  no secrets and each project runs as its own uid (other projects are 0700), so nothing sensitive is reachable.
+- LuaTeX allows `lfs.chdir("..")` and then relative writes, so a document can write into **world-writable**
+  directories outside its project. Production has none (read-only root, `/tmp` 0700, `ipc: none`); CI asserts this.
+- Closing both completely needs a stronger sandbox (gVisor or bwrap) — required before open registration (M4).
+
+**Still open after M1**
+- Uploads are buffered in memory (bounded: at most 8 × 50 MB per process); streaming to disk is a later refactor.
+- Rate limits, upload slots and WebSocket caps are in memory, per process (fine for one server).
+- No blob garbage collection yet (M3).
