@@ -1,5 +1,5 @@
 # Ligature CI (docs/M1.md §7b):
-#   test     typecheck all packages, every test suite (incl. real-TeX tests and the corpus with SANDBOX=none), web build
+#   test     in the TeX Live 2026 image, as a normal user: typecheck, every test suite (incl. real-TeX tests), web build
 #   sandbox  as root, in the production TeX Live image: the real uid sandbox tests and the corpus with SANDBOX=uid
 #   docker   build both images (medium TeX Live), start the compose stack, compile through the API, check the PDF
 name: CI
@@ -17,65 +17,60 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # A small TeX Live from Ubuntu (TL 2023 on 24.04): enough for pdf/xe/lualatex, bibtex/biber and the corpus.
-  # The runners are pinned to ubuntu-24.04 (not -latest), so the TeX Live year under the `test` job only
-  # changes on purpose (kpathsea's read restrictions differ between TL 2023 and TL 2026).
-  TEX_PACKAGES: >-
-    latexmk texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
-    texlive-luatex texlive-xetex texlive-bibtex-extra biber lmodern
-
 jobs:
+  # Runs in the same TeX Live image as the sandbox job (TeX Live 2026, like production and local TinyTeX).
+  # Pulling it from Docker Hub has been reliable; Ubuntu's apt mirror repeatedly stalled for 45+ minutes.
+  # Steps run as root in the container, but several tests (SANDBOX=none compiles) refuse root, so the
+  # test steps run as an unprivileged user `ci`.
   test:
     name: test
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    container:
+      image: texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee
+      options: --init
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
 
-      # Usually ~1 min. Mirrors occasionally stall, so each attempt is capped and retried instead of
-      # letting a hung download eat the whole job timeout.
-      - name: Install TeX Live (apt)
-        timeout-minutes: 25
+      - name: Tools
         run: |
-          apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
-          for attempt in 1 2 3; do
-            if sudo timeout 420 apt-get $apt_opts update -q &&
-               sudo timeout 420 apt-get $apt_opts install -y -q --no-install-recommends $TEX_PACKAGES; then
-              break
-            fi
-            [ "$attempt" = 3 ] && { echo "::error::apt install of TeX Live failed 3 times"; exit 1; }
-            echo "::warning::apt attempt $attempt failed or stalled; retrying"
-            sleep 15
-          done
           latexmk -v | sed -n 2p
+          pdftex --version | sed -n 1p
+          command -v setpriv || { apt-get update -q && apt-get install -y -q --no-install-recommends util-linux; }
 
       # Each project has its own TEXMFVAR, so without a system-wide font cache every lualatex project
       # would build its own (slow) luaotfload database.
       - name: Pre-generate the LuaTeX font cache
-        run: sudo env TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force || echo "::warning::luaotfload-tool failed; lualatex tests will be slower"
+        run: |
+          TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force
+          chmod -R a+rX "$(kpsewhich -var-value=TEXMFSYSVAR)"
 
-      - run: npm ci --no-audit --no-fund
+      - name: Unprivileged user for the tests
+        run: |
+          useradd --create-home --shell /bin/bash ci
+          chown -R ci:ci "$GITHUB_WORKSPACE"
+          d="$GITHUB_WORKSPACE"; while [ "$d" != "/" ]; do chmod o+x "$d"; d="$(dirname "$d")"; done
+          echo "AS_CI=setpriv --reuid=ci --regid=ci --init-groups env HOME=/home/ci" >> "$GITHUB_ENV"
+
+      - name: npm ci
+        run: $AS_CI PATH="$PATH" npm ci --no-audit --no-fund
 
       - name: Typecheck
-        run: npm run typecheck
+        run: $AS_CI PATH="$PATH" npm run typecheck
 
-      # CI=true (set by GitHub) makes tests that need TeX / POSIX fail instead of skipping
-      # (apps/compiler/test/ciPrerequisites.test.ts, corpus.test.ts).
+      # CI=true makes tests that need TeX / POSIX fail instead of skipping
+      # (apps/compiler/test/ciPrerequisites.test.ts, corpus.test.ts). No sandbox here (SANDBOX=none):
+      # the malicious-TeX corpus runs only in the `sandbox` job, as root with the uid sandbox.
       - name: Tests
-        env:
-          # Ubuntu's TeX Live 2023 behaves differently from production (TL 2026) and there is no sandbox
-          # here, so the malicious-TeX corpus runs only in the `sandbox` job.
-          CORPUS_SKIP_REASON: runs in the sandbox job (production TeX Live + uid sandbox)
-        run: npm test
+        run: $AS_CI PATH="$PATH" CI=true CORPUS_SKIP_REASON="runs in the sandbox job (uid sandbox)" npm test
 
       - name: Web build
-        run: npm run build -w @ligature/web
+        run: $AS_CI PATH="$PATH" npm run build -w @ligature/web
+
 
   # Runs in the production TeX Live (the compiler image's base, medium scheme) as root, so the corpus sees
   # the same kpathsea/LuaTeX as production: TeX Live 2026 no longer applies openin_any to reading.
