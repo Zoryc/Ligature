@@ -138,6 +138,113 @@ export interface UpdateFileRequest { name?: string; parentId?: string }
  */
 export type UploadResponse = TreeEntry
 
+/* ------------------------------------------------------------------ trash (M2) */
+
+/**
+ * GET /api/projects/:id/trash  (member)
+ * One entry per deletion: deleting a folder puts ONE entry in the trash (the folder), whose descendants
+ * are restored or purged with it.
+ */
+export interface TrashEntry {
+  /** File id of the deleted item (the folder itself for a folder deletion). */
+  id: string
+  name: string
+  kind: FileKind
+  /** Project-relative path the item had when it was deleted (e.g. "chapters/intro.tex"). */
+  originalPath: string
+  deletedAt: number
+  /** Display name of who deleted it ('' if that account no longer exists). */
+  deletedBy: string
+  /** Number of files (not folders) inside, including itself if it is a file. */
+  fileCount: number
+  /** Total bytes of binary files + text files inside. */
+  size: number
+  /** Unix ms after which the entry is purged automatically. */
+  expiresAt: number
+}
+
+/** POST /api/projects/:id/trash/:fileId/restore  (owner/editor) */
+export interface RestoreRequest {
+  /** Folder to restore into. Default: the original parent if it is still live, else the project root. */
+  parentId?: string
+}
+/** The restored item. Its name may carry a " (restored)" / " (restored 2)" suffix if the original name is taken. */
+export type RestoreResponse = TreeEntry
+
+/* ------------------------------------------------------------------ compile results (M2) */
+
+export type DiagnosticSeverity = 'error' | 'warning' | 'info'
+
+/** One problem found in the TeX/latexmk log, mapped to a project file where possible. */
+export interface Diagnostic {
+  severity: DiagnosticSeverity
+  /** e.g. 'latex', 'package:hyperref', 'bibtex', 'badbox', 'undefined-reference', 'undefined-citation' */
+  kind: string
+  message: string
+  /** File id in the project, when the location maps to a project file of this build. */
+  fileId?: string
+  /** Project-relative path as seen in the build (also set when fileId is not). */
+  path?: string
+  /** 1-based line. */
+  line?: number
+  /** For bad boxes: last line of the range ("at lines 12--15"). */
+  endLine?: number
+}
+
+/** POST /api/projects/:id/compile response (also stored per build). */
+export interface BuildResult {
+  buildId: string
+  status: CompileStatus
+  durationMs: number
+  log: string
+  hasPdf: boolean
+  /** Parsed from the log; at most 500, errors first. */
+  diagnostics: Diagnostic[]
+  /** Who started the build (display name). */
+  startedBy: string
+  /**
+   * treeVersion + per-file (by file id) base64 Yjs state vectors and snapshots the build was made from,
+   * so the client can tell whether the PDF is behind the editor.
+   */
+  snapshot: { treeVersion: number; docs: Record<string, string>; docSnapshots: Record<string, string> }
+}
+
+/** GET /api/projects/:id/builds/latest -> BuildResult of the most recent finished build, or 404 'no-build'. */
+
+/* ------------------------------------------------------------------ SyncTeX (M2) */
+
+/** A rectangle on a PDF page, in PDF points (1/72 in), origin at the TOP-left of the page. */
+export interface PdfRect { page: number; x: number; y: number; width: number; height: number }
+
+/** GET /api/projects/:id/builds/:buildId/synctex/view?fileId=&line=&column=  (member) — source -> PDF */
+export interface SynctexViewResponse {
+  /** Boxes to highlight, all on the first page that has a match (empty array if no match). */
+  boxes: PdfRect[]
+}
+
+/** GET /api/projects/:id/builds/:buildId/synctex/edit?page=&x=&y=  (member) — PDF -> source; x/y as in PdfRect */
+export interface SynctexEditResponse {
+  fileId: string
+  path: string
+  /** 1-based line. */
+  line: number
+  /** 0-based column, or -1 when SyncTeX doesn't know it (the usual case). */
+  column: number
+}
+
+/* ------------------------------------------------------------------ zip (M2) */
+
+/** POST /api/projects/import?name=<project name>  body: raw zip bytes -> ProjectDetail of the new project */
+export interface ImportReport {
+  /** Entries skipped on purpose (e.g. __MACOSX/, .DS_Store, empty folders), with the reason. */
+  skipped: { path: string; reason: string }[]
+  /** Set when the main file was guessed (file containing \documentclass, preferring main.tex at the root). */
+  detectedMainFile: string | null
+}
+export interface ImportResponse { project: ProjectDetail; report: ImportReport }
+
+/** GET /api/projects/:id/export.zip  (member) -> application/zip, current live files (text from the live docs) */
+
 /* ------------------------------------------------------------------ events */
 
 /** Stateless messages broadcast on the project meta doc. */
@@ -148,3 +255,4 @@ export type MetaEvent =
   | { type: 'compile-finished'; buildId: string; status: CompileStatus }
   | { type: 'access-revoked'; userId: string }
   | { type: 'project-deleted' }
+  | { type: 'trash-changed' }                           // M2: something was deleted, restored or purged
