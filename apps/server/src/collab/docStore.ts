@@ -8,6 +8,8 @@ export const LOAD_ORIGIN = Symbol('ligature-load')
 export const TEXT_KEY = 'content'
 
 const FLUSH_INTERVAL_MS = 200
+/** After a failed write (disk full, I/O error): retry the kept batch this often. */
+const FLUSH_RETRY_MS = 1000
 /** Compact a loaded doc once this many updates were logged since its last compaction. */
 const COMPACT_EVERY = 500
 
@@ -41,6 +43,8 @@ export class DocStore {
    * must not be written again by a later compaction (unload, shutdown). Cleared by `release`.
    */
   private retired = new Set<string>()
+  /** See `flushFailing`. */
+  private flushFailed = false
 
   private readonly stmt
   constructor(private readonly db: DB) {
@@ -84,18 +88,56 @@ export class DocStore {
     this.nextSeq.set(docName, seq + 1)
     this.buffer.push({ docName, seq, update: update.slice(), userId, ts: Date.now() })
     this.sinceCompact.set(docName, (this.sinceCompact.get(docName) ?? 0) + 1)
-    if (!this.timer) this.timer = setTimeout(() => this.flush(), FLUSH_INTERVAL_MS)
+    if (!this.timer) this.timer = setTimeout(() => this.flushFromTimer(), FLUSH_INTERVAL_MS)
   }
 
-  /** Write all buffered updates in one transaction. Synchronous. */
+  /**
+   * The batching timer is usually the first to write a user's edits. A failed write there (disk full,
+   * I/O error, read-only volume) is logged instead of thrown: thrown from a timer it would end the
+   * process, so /healthz could never report `store: write-failed` and the server would crash-loop
+   * instead. Direct callers of `flush()` still get the error.
+   */
+  private flushFromTimer(): void {
+    const wasFailing = this.flushFailed
+    try {
+      this.flush()
+      if (wasFailing) console.error('[docStore] writing edits works again; the kept edits are saved')
+    } catch (e) {
+      if (!wasFailing) console.error('[docStore] writing edits failed; they are kept in memory and retried', e)
+      // The batch is back in the buffer (see flush): retry until the disk accepts it again.
+      if (!this.timer && this.buffer.length) this.timer = setTimeout(() => this.flushFromTimer(), FLUSH_RETRY_MS)
+    }
+  }
+
+  /**
+   * Write all buffered updates in one transaction. Synchronous. On failure the transaction is rolled back
+   * and the whole batch goes back to the front of the buffer (same seqs, same order), then the error is
+   * thrown: dropping it would leave a gap in the log that no later write repairs.
+   */
   flush(): void {
     if (this.timer) { clearTimeout(this.timer); this.timer = null }
     if (this.buffer.length === 0 || !this.db.open) return
     const batch = this.buffer
     this.buffer = []
-    this.db.transaction(() => {
-      for (const p of batch) this.stmt.insertUpdate.run(p.docName, p.seq, p.update, p.userId, p.ts)
-    })()
+    try {
+      this.db.transaction(() => {
+        for (const p of batch) this.stmt.insertUpdate.run(p.docName, p.seq, p.update, p.userId, p.ts)
+      })()
+    } catch (e) {
+      this.buffer = batch.concat(this.buffer)
+      this.flushFailed = true
+      throw e
+    }
+    this.flushFailed = false
+  }
+
+  /**
+   * The last flush of updates failed and none has succeeded since: edits are not being saved
+   * (GET /healthz, docs/M4.md §1). Only observes flushing; `flush()` still throws the failure (the
+   * batching timer logs it, see `flushFromTimer`).
+   */
+  get flushFailing(): boolean {
+    return this.flushFailed
   }
 
   /** Drop unflushed updates and stop the timer, as a kill -9 would. Tests only. */

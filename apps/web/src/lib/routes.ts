@@ -1,7 +1,7 @@
 /**
  * Hash routes (pure; the reactive router lives in router.svelte.ts):
  *   #/login[?next=/path]   #/signup[?invite=TOKEN]   #/invite/:token
- *   #/projects   #/project/:id   #/account   #/admin
+ *   #/projects   #/project/:id   #/account   #/admin   #/admin/storage   #/admin/audit
  */
 
 export type Route =
@@ -11,8 +11,12 @@ export type Route =
   | { name: 'projects' }
   | { name: 'project'; id: string }
   | { name: 'account' }
-  | { name: 'admin' }
+  | { name: 'admin'; tab: AdminTab }
   | { name: 'not-found' }
+
+/** Tabs of the admin page; 'users' is the plain #/admin. */
+export type AdminTab = 'users' | 'storage' | 'audit'
+export const ADMIN_TABS: readonly AdminTab[] = ['users', 'storage', 'audit']
 
 /** Routes that work without a session. */
 export const PUBLIC_ROUTES: ReadonlySet<Route['name']> = new Set(['login', 'signup', 'invite'])
@@ -34,7 +38,9 @@ export function parseHash(hash: string): Route {
   if (path === '/signup') return { name: 'signup', invite: params.get('invite') || null }
   if (path === '/projects' || path === '/') return { name: 'projects' }
   if (path === '/account') return { name: 'account' }
-  if (path === '/admin') return { name: 'admin' }
+  if (path === '/admin') return { name: 'admin', tab: 'users' }
+  if (path === '/admin/storage') return { name: 'admin', tab: 'storage' }
+  if (path === '/admin/audit') return { name: 'admin', tab: 'audit' }
   const project = /^\/project\/([^/]+)$/.exec(path)
   if (project) {
     const id = decode(project[1]!)
@@ -68,9 +74,13 @@ export function routePath(r: Route): string {
     case 'projects': return '/projects'
     case 'project': return `/project/${encodeURIComponent(r.id)}`
     case 'account': return '/account'
-    case 'admin': return '/admin'
+    case 'admin': return adminPath(r.tab)
     case 'not-found': return '/projects'
   }
+}
+
+export function adminPath(tab: AdminTab): string {
+  return tab === 'users' ? '/admin' : `/admin/${tab}`
 }
 
 export function loginPath(next: string | null): string {

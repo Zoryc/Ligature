@@ -1,8 +1,9 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import type { AdminUser, GcReport, InstanceSettings, RebuildDocResponse, StorageReport } from '@ligature/shared'
-import { audit } from '../../audit.ts'
-import { ApiError, notFound } from '../../errors.ts'
+import { AUDIT_CATEGORIES, type AdminUser, type AuditCategory, type AuditPage, type GcReport, type InstanceSettings,
+  type RebuildDocResponse, type StorageReport } from '@ligature/shared'
+import { audit, auditPage } from '../../audit.ts'
+import { ApiError, badRequest, notFound } from '../../errors.ts'
 import { hashPassword, isAcceptablePassword } from '../../auth/password.ts'
 import { deleteUserSessions } from '../../auth/sessions.ts'
 import { getSettings, REGISTRATION_MODES, setSettings } from '../../auth/settings.ts'
@@ -22,6 +23,33 @@ const updateSchema = z.strictObject({
 const settingsSchema = z.strictObject({ registration: z.enum(REGISTRATION_MODES as [string, ...string[]]) })
 
 const lastAdmin = (message: string) => new ApiError(409, 'last-admin', message)
+
+/* ---- audit log query (docs/M4.md §2) ---- */
+
+/** A non-negative integer as written in a query string (no sign, exponent or hex). */
+const count = (min: number) => z.string().max(16).regex(/^\d+$/, 'expected an integer')
+  .transform(Number).pipe(z.number().int().min(min).max(Number.MAX_SAFE_INTEGER))
+const uuid = (what: string) => z.string().max(64).refine(isUuid, `expected a ${what} id`)
+
+const AUDIT_PAGE_DEFAULT = 100
+const auditQuerySchema = z.object({
+  limit: count(1).pipe(z.number().max(200)).optional(),
+  before: count(1).optional(),
+  category: z.enum(Object.keys(AUDIT_CATEGORIES) as [AuditCategory, ...AuditCategory[]]).optional(),
+  actor: uuid('user').optional(),
+  project: uuid('project').optional(),
+  since: count(0).optional(),
+  until: count(0).optional(),
+})
+
+function readQuery<S extends z.ZodType>(c: Context, schema: S): z.output<S> {
+  const r = schema.safeParse(c.req.query())
+  if (!r.success) {
+    const i = r.error.issues[0]
+    throw badRequest(i ? `${i.path.join('.') || 'query'}: ${i.message}` : 'Invalid query')
+  }
+  return r.data
+}
 
 export function adminRoutes(deps: RouteDeps): Hono<Env> {
   const { db } = deps
@@ -92,6 +120,14 @@ export function adminRoutes(deps: RouteDeps): Hono<Env> {
     const after = setSettings(db, { registration: body.registration as InstanceSettings['registration'] })
     audit(db, { actorId: c.get('user').id, action: 'settings-update', detail: { before, after } })
     return c.json(after satisfies InstanceSettings)
+  })
+
+  /* ---- audit log (docs/M4.md §2) ---- */
+
+  /** Newest first, keyset-paginated. Not audited itself: every page view would flood the log it shows. */
+  app.get('/admin/audit', c => {
+    const q = readQuery(c, auditQuerySchema)
+    return c.json(auditPage(db, { ...q, limit: q.limit ?? AUDIT_PAGE_DEFAULT }) satisfies AuditPage, 200, { 'cache-control': 'no-store' })
   })
 
   /* ---- storage (docs/M3.md §3–§5) ---- */

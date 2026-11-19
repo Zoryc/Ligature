@@ -417,3 +417,79 @@ export interface RebuildDocResponse {
   stateBytesBefore: number
   stateBytesAfter: number
 }
+
+/* ------------------------------------------------------------------ self-host polish (M4, docs/M4.md) */
+
+/** One check of GET /healthz. 'warn' does not make the server unhealthy (e.g. disk getting full). */
+export type HealthStatus = 'ok' | 'warn' | 'fail'
+
+export interface HealthCheck {
+  status: HealthStatus
+  /** How long the check took. */
+  ms: number
+  /** A short, non-sensitive reason code when not ok: 'timeout', 'refused', 'http-503', 'low-disk', ... */
+  reason?: string
+}
+
+/**
+ * GET /healthz (no login; also HEAD). 200 when no check fails, 503 otherwise. `?scope=app` skips the
+ * compiler (for the app container's own Docker HEALTHCHECK). Cached for a few seconds (docs/M4.md §1).
+ */
+export interface HealthReport {
+  ok: boolean
+  /** 'ok' all fine, 'degraded' only warnings, 'down' something failed. */
+  status: 'ok' | 'degraded' | 'down'
+  at: number
+  checks: {
+    db: HealthCheck
+    /** Free space where the data lives (bytes). */
+    disk: HealthCheck & { freeBytes?: number }
+    /** The document store persists edits (no recent write failure). */
+    store: HealthCheck
+    /** A WebSocket upgrade on /collab succeeds (over loopback). */
+    collab: HealthCheck
+    /** Absent with ?scope=app. */
+    compiler?: HealthCheck
+  }
+}
+
+/** Groups of audit actions, for the audit log filter. */
+export type AuditCategory = 'account' | 'admin' | 'members' | 'projects' | 'history'
+
+export const AUDIT_CATEGORIES: Record<AuditCategory, readonly string[]> = {
+  account: ['signup', 'login', 'login-failure', 'logout-all'],
+  admin: ['admin-user-create', 'admin-user-update', 'settings-update', 'storage.view', 'gc.run', 'doc.rebuild', 'project.purge'],
+  members: ['member-add', 'member-role-change', 'member-remove', 'ownership-transfer', 'invite-create', 'invite-revoke', 'invite-accept'],
+  projects: ['project-create', 'project-delete', 'project.setting', 'file-delete', 'file.restore', 'file.purge', 'trash.empty'],
+  history: ['version.create', 'version.label', 'version.restore'],
+}
+
+export interface AuditPerson { id: string; username: string; displayName: string }
+
+/** One row of the audit log as the admin page shows it. */
+export interface AuditEntryView {
+  id: number
+  at: number
+  action: string
+  /** null for actions that belong to no category (future actions): shown under "Other". */
+  category: AuditCategory | null
+  /** Who did it; null = the server itself (schedules) or the command line without an account. */
+  actor: AuditPerson | null
+  /** The project it concerns (also when the project is deleted or purged: then name may be ''). */
+  project: { id: string; name: string; deleted: boolean } | null
+  /** The action's details as recorded (never secrets). */
+  detail: Record<string, unknown> | null
+  /** People named in `detail` (userId, from/to of an ownership transfer), by id. Missing = account gone. */
+  users: Record<string, AuditPerson>
+}
+
+/**
+ * GET /api/admin/audit (admin) — newest first.
+ * Query: limit (1–200, default 100), before (an entry id: older entries only), category, actor (user id),
+ * project (project id), since / until (ms timestamps).
+ */
+export interface AuditPage {
+  entries: AuditEntryView[]
+  /** Pass as `before` to get the next (older) page; null when there is nothing older. */
+  next: number | null
+}

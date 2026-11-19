@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeEntry } from '@ligature/shared'
 import { errorCode, errorMessage } from '../src/lib/errors.ts'
-import { inviteUrl, loginPath, parseHash, routePath, safeNext, signupPath } from '../src/lib/routes.ts'
+import { adminPath, ADMIN_TABS, inviteUrl, loginPath, parseHash, routePath, safeNext, signupPath } from '../src/lib/routes.ts'
 import {
   childNamed, entryPath, folderLabel, formatBytes, isInlineImage, isSameOrInside, mainFileCandidates, moveTargets,
   nameProblem, openFileOutcome, planUploads, targetFolder,
@@ -69,7 +69,11 @@ describe('routes', () => {
     expect(parseHash('#/invite/abc-DEF_1')).toEqual({ name: 'invite', token: 'abc-DEF_1' })
     expect(parseHash('#/project/1234')).toEqual({ name: 'project', id: '1234' })
     expect(parseHash('#/account')).toEqual({ name: 'account' })
-    expect(parseHash('#/admin')).toEqual({ name: 'admin' })
+    expect(parseHash('#/admin')).toEqual({ name: 'admin', tab: 'users' })
+    expect(parseHash('#/admin/storage')).toEqual({ name: 'admin', tab: 'storage' })
+    expect(parseHash('#/admin/audit')).toEqual({ name: 'admin', tab: 'audit' })
+    expect(parseHash('#/admin/users')).toEqual({ name: 'not-found' }) // the users tab is plain #/admin
+    expect(parseHash('#/admin/nope')).toEqual({ name: 'not-found' })
     expect(parseHash('#/nope')).toEqual({ name: 'not-found' })
     expect(parseHash('#/project/%E0%A4%A')).toEqual({ name: 'not-found' }) // malformed escape
   })
@@ -97,6 +101,11 @@ describe('routes', () => {
     expect(routePath({ name: 'project', id: 'x/y' })).toBe('/project/x%2Fy')
     expect(parseHash(`#${routePath({ name: 'project', id: 'x/y' })}`)).toEqual({ name: 'project', id: 'x/y' })
     expect(inviteUrl('http://localhost:5173', 'abc')).toBe('http://localhost:5173/#/invite/abc')
+    expect(ADMIN_TABS.map(adminPath)).toEqual(['/admin', '/admin/storage', '/admin/audit'])
+    for (const tab of ADMIN_TABS) {
+      expect(parseHash(`#${routePath({ name: 'admin', tab })}`)).toEqual({ name: 'admin', tab })
+      expect(safeNext(adminPath(tab))).toBe(adminPath(tab)) // back to the same tab after logging in
+    }
   })
 })
 

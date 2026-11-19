@@ -370,7 +370,9 @@ async function restoreLocked(s: Services, actor: SessionUser, queued: Access, ve
 
   const result: RestoreVersionResponse = { preRestoreVersionId: pre.id, restored: res.changed.size, trashed: plan.trashedFiles }
   audit(db, { actorId: actor.id, projectId: a.projectId, action: 'version.restore',
-    detail: { versionId: version.id, ...result, ...(req.paths !== undefined ? { paths: files.map(f => f.path) } : {}) } })
+    // The version's label and time make the entry readable after the version itself is thinned (docs/M4.md §2).
+    detail: { versionId: version.id, label: version.label, versionAt: version.createdAt, ...result,
+      ...(req.paths !== undefined ? { paths: files.map(f => f.path) } : {}) } })
   s.collab.broadcast(a.projectId, { type: 'versions-changed' })
   s.collab.broadcast(a.projectId, { type: 'version-restored', versionId: version.id, preRestoreVersionId: pre.id, by: actor.displayName })
   return result

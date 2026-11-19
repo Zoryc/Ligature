@@ -22,6 +22,10 @@ import { readCookie, SESSION_COOKIE, sessionForToken } from './auth/sessions.ts'
 import { createRebuilder, DEFAULT_REBUILD, type RebuildConfig, type Rebuilder } from './collab/rebuild.ts'
 import type { GcConfig } from './maintenance/gc.ts'
 import { createMaintenance, type Maintenance } from './maintenance/maintenance.ts'
+import {
+  collabProbe, compilerProbe, createHealth, createProbeToken, dbProbe, diskProbe, HEALTH_PROBE_HEADER, isProbeToken, loopbackUrl,
+  storeProbe, type Health, type HealthOptions,
+} from './health/health.ts'
 
 export interface LigatureConfig {
   dataDir: string
@@ -58,6 +62,13 @@ export interface LigatureConfig {
   gc?: Partial<GcConfig>
   /** Oversized-doc rebuild thresholds (docs/M3.md §4). */
   rebuild?: Partial<RebuildConfig>
+  /**
+   * Origin sent by the /healthz WebSocket check (docs/M4.md §1); it must pass `isAllowedOrigin`.
+   * main.ts passes the first of ALLOWED_ORIGINS. Default: `http://localhost:<listening port>`.
+   */
+  healthOrigin?: string
+  /** /healthz timeout, cache and clock (tests). */
+  health?: HealthOptions
 }
 
 export interface WsLimits {
@@ -92,6 +103,8 @@ export interface Ligature extends Services {
   maintenance: Maintenance
   /** Oversized-doc rebuild (docs/M3.md §4). */
   rebuilder: Rebuilder
+  /** GET /healthz (docs/M4.md §1). */
+  health: Health
   /** Resolves once listening. */
   listening: Promise<void>
   /** Flush documents and close everything (does not exit the process). */
@@ -151,11 +164,27 @@ export function startLigature(cfg: LigatureConfig): Ligature {
   maintenance.start()
   const limiters = createLimiters({ ...DEFAULT_RATE_LIMITS, ...cfg.rateLimits })
 
+  // Health checks of the real paths (docs/M4.md §1). The socket check dials our own listener, so it reads
+  // the bound address when it runs (the server is created below; probes only run once requests arrive).
+  // Its token keeps that socket out of the anonymous-socket cap (see HEALTH_PROBE_HEADER).
+  const probeToken = createProbeToken()
+  const health = createHealth({
+    db: dbProbe(db),
+    disk: diskProbe(cfg.dataDir),
+    store: storeProbe(store),
+    collab: collabProbe(() => {
+      const addr = server.address()
+      if (!addr || typeof addr === 'string') return null
+      return { url: loopbackUrl(addr, '/collab'), origin: cfg.healthOrigin ?? `http://localhost:${addr.port}`, token: probeToken }
+    }),
+    compiler: compilerProbe(compiler),
+  }, cfg.health)
+
   const webDistDir = cfg.webDistDir && existsSync(join(cfg.webDistDir, 'index.html')) ? cfg.webDistDir : null
   const app = createApp({
     db, store, collab, blobs, limits, history, limiters, compile: orchestrator, maintenance, rebuilder,
     isAllowedOrigin: cfg.isAllowedOrigin, devLogin: cfg.devLogin, secureCookies: cfg.production,
-    trustProxy: cfg.trustProxy, webDistDir,
+    trustProxy: cfg.trustProxy, webDistDir, health,
   })
   const server = createAdaptorServer({ fetch: app.fetch }) as Server
 
@@ -178,11 +207,14 @@ export function startLigature(cfg: LigatureConfig): Ligature {
     if (url.pathname !== '/collab' || !cfg.isAllowedOrigin(req.headers.origin)) return reject(socket, '403 Forbidden')
     const userId = sessionForToken(db, readCookie(req.headers.cookie, SESSION_COOKIE))?.user.id ?? null
     if (userId !== null && (socketsPerUser.get(userId) ?? 0) >= ws.maxSocketsPerUser) return reject(socket, '429 Too Many Requests')
-    if (userId === null && anonSockets >= ws.maxAnonSockets) return reject(socket, '503 Service Unavailable')
+    // The /healthz check's own socket (one per scope at most: single flight; closed at once) is not counted: a full anonymous
+    // cap must not read as "collab is broken" (docs/M4.md §1).
+    const probe = userId === null && isProbeToken(probeToken, req.headers[HEALTH_PROBE_HEADER])
+    if (userId === null && !probe && anonSockets >= ws.maxAnonSockets) return reject(socket, '503 Service Unavailable')
     // Count before the (async) handshake completes, so a burst cannot overshoot the caps.
     if (userId !== null) socketsPerUser.set(userId, (socketsPerUser.get(userId) ?? 0) + 1)
-    else anonSockets++
-    let counted = true
+    else if (!probe) anonSockets++
+    let counted = !probe
     const uncount = () => {
       if (!counted) return
       counted = false
@@ -220,7 +252,7 @@ export function startLigature(cfg: LigatureConfig): Ligature {
   let stopped = false
   return {
     db, store, collab, blobs, limits, history, limiters, server, app, orchestrator, compiler, listening, sweepTrash,
-    maintenance, rebuilder,
+    maintenance, rebuilder, health,
     async stop() {
       if (stopped) return
       stopped = true

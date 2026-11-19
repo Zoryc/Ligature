@@ -40,6 +40,31 @@ Settings (`docker/.env`, see `.env.example`):
 Upgrading: `git pull && docker compose -f docker/compose.yaml up -d --build`. Database migrations run when the
 app starts. Take a backup first.
 
+## Monitoring
+
+Point an uptime monitor at `https://<host>/healthz` (no login). It answers **200** when the instance works
+and **503** when something a user's work depends on is broken, with a JSON report of each check: the
+database, free disk space in `/data` (a warning below 1 GB, a failure below 100 MB), whether edits are being
+saved, a real WebSocket connection to `/collab`, and the compiler. Failures carry short reason codes
+(`timeout`, `refused`, `http-403`, `low-disk`, `write-failed`, `unreachable`, ...); the details are in the
+app's log (`docker compose -f docker/compose.yaml logs app`); a failed write of edits is logged once, as
+`[docStore] writing edits failed`, and the server keeps running so that `/healthz` can report it. The result is cached for 5 s, so polling it
+often is harmless. `GET /api/health` still answers `{ "ok": true }` while the process runs (liveness only).
+
+The app container's own HEALTHCHECK uses `/healthz?scope=app`, which leaves out the compiler (the compiler
+container has its own HEALTHCHECK, and restarting the app would not fix it).
+
+`/healthz` opens its WebSocket over loopback inside the container, so a reverse proxy that drops WebSocket
+upgrades is **not** detected by it. Signs of that: the editor shows "Offline" and never connects. To check the
+proxy itself, ask for an upgrade through it (expect `HTTP/1.1 101 Switching Protocols`; any other status, or a
+`200` with the web page, means the proxy does not pass upgrades):
+
+```sh
+curl -si --http1.1 --max-time 3 https://latex.example.org/collab \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Origin: https://latex.example.org' | head -n 1
+```
+
 ## The `ligature` CLI
 
 Installed in the app image as `/usr/local/bin/ligature` (it runs `apps/server/src/cli.ts`, with `DATA_DIR=/data`):

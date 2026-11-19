@@ -61,8 +61,11 @@ ENV PORT=3000 \
 EXPOSE 3000
 VOLUME ["/data"]
 
+# /healthz checks the database, disk space, document store and a real /collab WebSocket over loopback
+# (docs/M4.md §1). scope=app leaves out the compiler: restarting this container would not fix a stopped
+# compiler, which has its own HEALTHCHECK. Each check has a 2 s timeout, well inside --timeout.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/healthz?scope=app').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
 WORKDIR /app/apps/server
 CMD ["node", "--import", "tsx", "src/main.ts"]

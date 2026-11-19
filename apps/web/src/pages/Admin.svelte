@@ -10,7 +10,28 @@
   import { adminUserActions } from '../lib/adminActions.ts'
   import NavBar from '../lib/NavBar.svelte'
   import StorageSection from '../lib/StorageSection.svelte'
+  import AuditLog from '../lib/AuditLog.svelte'
   import Avatar from '../lib/Avatar.svelte'
+  import { go } from '../lib/router.svelte.ts'
+  import { adminPath, ADMIN_TABS, type AdminTab } from '../lib/routes.ts'
+
+  interface Props { tab: AdminTab }
+  let { tab }: Props = $props()
+
+  const TAB_LABELS: Record<AdminTab, string> = { users: 'Users', storage: 'Storage', audit: 'Audit log' }
+
+  /** Arrow keys, Home and End move between the tabs (each tab is a link to its route). */
+  function tabKey(e: KeyboardEvent) {
+    const i = ADMIN_TABS.indexOf(tab)
+    const to = e.key === 'ArrowRight' ? (i + 1) % ADMIN_TABS.length
+      : e.key === 'ArrowLeft' ? (i - 1 + ADMIN_TABS.length) % ADMIN_TABS.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? ADMIN_TABS.length - 1 : -1
+    if (to < 0) return
+    e.preventDefault()
+    const next = ADMIN_TABS[to]!
+    document.getElementById(`admin-tab-${next}`)?.focus()
+    go(adminPath(next))
+  }
 
   const MODES: { value: RegistrationMode; label: string }[] = [
     { value: 'invite-only', label: 'Invite only: people sign up with a project invite link' },
@@ -130,112 +151,148 @@
 </script>
 
 <NavBar current="admin" />
-<main class="page">
+<main class="page" class:wide={tab === 'audit'}>
   <h1>Administration</h1>
   {#if !session.me?.isAdmin}
     <p class="error">Only server administrators can see this page.</p>
-  {:else if error}
-    <p class="error">{error}</p>
-  {:else if !users}
-    <p class="muted">Loading…</p>
   {:else}
-    <section class="card">
-      <h2>Registration</h2>
-      <p class="sub">Who can create an account on this server.</p>
-      <div class="form">
-        <div class="modes" role="radiogroup" aria-label="Registration">
-          {#each MODES as m (m.value)}
-            {@const cut = m.label.indexOf(': ')}
-            <label class="mode" class:on={registration === m.value}>
-              <input type="radio" name="registration" value={m.value} bind:group={registration} />
-              <span><strong>{m.label.slice(0, cut)}</strong><span class="desc">{m.label.slice(cut + 2)}</span></span>
-            </label>
-          {/each}
-        </div>
-        {#if registration === 'open'}
-          <p class="warning">Warning: with open registration, <strong>anyone who can reach this server</strong> can create an account
-            and use the compiler. Only choose this on a private network or for a short time.</p>
-        {/if}
-        <div class="row">
-          <button type="button" class="primary" disabled={busy || registration === savedRegistration} onclick={saveSettings}>Save</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Users</h2>
-      <div class="table-wrap">
-        <table class="list users">
-          <thead><tr><th>Username</th><th>Display name</th><th>Status</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead>
-          <tbody>
-            {#each users as u (u.id)}
-              {@const actions = adminUserActions(u.id, session.me.id)}
-              <tr class:disabled={u.disabled}>
-                <td>
-                  <span class="person">
-                    <Avatar id={u.id} name={u.displayName} size={20} />
-                    <span class="mono">{u.username}</span>{#if u.id === session.me.id}<span class="muted">(you)</span>{/if}
-                  </span>
-                </td>
-                <td>{u.displayName}</td>
-                <td class="status">
-                  <span class="tag" class:admin={u.isAdmin}>{u.isAdmin ? 'admin' : 'user'}</span>
-                  {#if u.disabled}<span class="tag off">disabled</span>{/if}
-                </td>
-                <td class="when">{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td class="end">
-                  <span class="btns">
-                    {#if actions.includes('rename')}<button type="button" class="small" onclick={() => rename(u)}>Rename…</button>{/if}
-                    {#if actions.includes('reset-password')}
-                      <button type="button" class="small" onclick={() => resetPassword(u)}>Reset password…</button>
-                    {:else}
-                      <a href="#/account" title="Resetting your own password here would log you out">Change password</a>
-                    {/if}
-                    {#if actions.includes('toggle-admin')}
-                      <button type="button" class="small" onclick={() => toggleAdmin(u)}>{u.isAdmin ? 'Remove admin' : 'Make admin'}</button>
-                    {/if}
-                    {#if actions.includes('toggle-disabled')}
-                      <button type="button" class="small" class:danger={!u.disabled} onclick={() => toggleDisabled(u)}>{u.disabled ? 'Enable' : 'Disable'}</button>
-                    {/if}
-                  </span>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Create user</h2>
-      <p class="sub">Passwords need at least 10 characters. Tell the user through a safe channel.</p>
-      <form class="form create" onsubmit={createUser}>
-        <label class="field"><span class="label">Username</span>
-          <span class="control"><input bind:value={cUsername} autocomplete="off" autocapitalize="none" spellcheck="false" /></span></label>
-        <label class="field"><span class="label">Display name</span>
-          <span class="control"><input bind:value={cDisplay} autocomplete="off" /></span></label>
-        <label class="field"><span class="label">Password</span>
-          <span class="control"><input bind:value={cPassword} type="password" autocomplete="new-password" /></span></label>
-        <div class="field">
-          <span class="label">Role</span>
-          <span class="control"><label class="check"><input type="checkbox" bind:checked={cAdmin} /> Administrator</label></span>
-        </div>
-        <div class="field">
-          <span class="label"></span>
-          <div class="control">
-            {#if cTouched && cProblem}<p class="error">{cProblem}</p>{/if}
-            <div class="row"><button type="submit" class="primary">Create user</button></div>
-            {#if cError}<p class="error" role="alert">{cError}</p>{/if}
+    <div class="tabs" role="tablist" aria-label="Administration">
+      {#each ADMIN_TABS as t (t)}
+        <a id="admin-tab-{t}" role="tab" href="#{adminPath(t)}" aria-selected={tab === t} aria-controls="admin-panel"
+          tabindex={tab === t ? 0 : -1} onkeydown={tabKey}>{TAB_LABELS[t]}</a>
+      {/each}
+    </div>
+    <div id="admin-panel" role="tabpanel" aria-labelledby="admin-tab-{tab}">
+      {#if tab === 'storage'}
+        <StorageSection />
+      {:else if tab === 'audit'}
+        <AuditLog />
+      {:else if error}
+        <p class="error">{error}</p>
+      {:else if !users}
+        <p class="muted">Loading…</p>
+      {:else}
+        <section class="card">
+          <h2>Registration</h2>
+          <p class="sub">Who can create an account on this server.</p>
+          <div class="form">
+            <div class="modes" role="radiogroup" aria-label="Registration">
+              {#each MODES as m (m.value)}
+                {@const cut = m.label.indexOf(': ')}
+                <label class="mode" class:on={registration === m.value}>
+                  <input type="radio" name="registration" value={m.value} bind:group={registration} />
+                  <span><strong>{m.label.slice(0, cut)}</strong><span class="desc">{m.label.slice(cut + 2)}</span></span>
+                </label>
+              {/each}
+            </div>
+            {#if registration === 'open'}
+              <p class="warning">Warning: with open registration, <strong>anyone who can reach this server</strong> can create an account
+                and use the compiler. Only choose this on a private network or for a short time.</p>
+            {/if}
+            <div class="row">
+              <button type="button" class="primary" disabled={busy || registration === savedRegistration} onclick={saveSettings}>Save</button>
+            </div>
           </div>
-        </div>
-      </form>
-    </section>
+        </section>
 
-    <StorageSection />
+        <section class="card">
+          <h2>Users</h2>
+          <div class="table-wrap">
+            <table class="list users">
+              <thead><tr><th>Username</th><th>Display name</th><th>Status</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead>
+              <tbody>
+                {#each users as u (u.id)}
+                  {@const actions = adminUserActions(u.id, session.me.id)}
+                  <tr class:disabled={u.disabled}>
+                    <td>
+                      <span class="person">
+                        <Avatar id={u.id} name={u.displayName} size={20} />
+                        <span class="mono">{u.username}</span>{#if u.id === session.me.id}<span class="muted">(you)</span>{/if}
+                      </span>
+                    </td>
+                    <td>{u.displayName}</td>
+                    <td class="status">
+                      <span class="tag" class:admin={u.isAdmin}>{u.isAdmin ? 'admin' : 'user'}</span>
+                      {#if u.disabled}<span class="tag off">disabled</span>{/if}
+                    </td>
+                    <td class="when">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td class="end">
+                      <span class="btns">
+                        {#if actions.includes('rename')}<button type="button" class="small" onclick={() => rename(u)}>Rename…</button>{/if}
+                        {#if actions.includes('reset-password')}
+                          <button type="button" class="small" onclick={() => resetPassword(u)}>Reset password…</button>
+                        {:else}
+                          <a href="#/account" title="Resetting your own password here would log you out">Change password</a>
+                        {/if}
+                        {#if actions.includes('toggle-admin')}
+                          <button type="button" class="small" onclick={() => toggleAdmin(u)}>{u.isAdmin ? 'Remove admin' : 'Make admin'}</button>
+                        {/if}
+                        {#if actions.includes('toggle-disabled')}
+                          <button type="button" class="small" class:danger={!u.disabled} onclick={() => toggleDisabled(u)}>{u.disabled ? 'Enable' : 'Disable'}</button>
+                        {/if}
+                      </span>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Create user</h2>
+          <p class="sub">Passwords need at least 10 characters. Tell the user through a safe channel.</p>
+          <form class="form create" onsubmit={createUser}>
+            <label class="field"><span class="label">Username</span>
+              <span class="control"><input bind:value={cUsername} autocomplete="off" autocapitalize="none" spellcheck="false" /></span></label>
+            <label class="field"><span class="label">Display name</span>
+              <span class="control"><input bind:value={cDisplay} autocomplete="off" /></span></label>
+            <label class="field"><span class="label">Password</span>
+              <span class="control"><input bind:value={cPassword} type="password" autocomplete="new-password" /></span></label>
+            <div class="field">
+              <span class="label">Role</span>
+              <span class="control"><label class="check"><input type="checkbox" bind:checked={cAdmin} /> Administrator</label></span>
+            </div>
+            <div class="field">
+              <span class="label"></span>
+              <div class="control">
+                {#if cTouched && cProblem}<p class="error">{cProblem}</p>{/if}
+                <div class="row"><button type="submit" class="primary">Create user</button></div>
+                {#if cError}<p class="error" role="alert">{cError}</p>{/if}
+              </div>
+            </div>
+          </form>
+        </section>
+      {/if}
+    </div>
   {/if}
 </main>
 
 <style>
+  main.wide { max-width: 1160px; }
+
+  /* Tabs: the Folio tab strip (uppercase labels, a teal rule on the selected one). */
+  .tabs { display: flex; margin: 0 0 4px; border-bottom: 1px solid var(--rule); }
+  .tabs a {
+    margin-bottom: -1px;
+    padding: 10px 16px 9px;
+    border: 1px solid transparent;
+    border-top-width: 2px;
+    font: 600 10.5px/1 var(--font-ui);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ink-3);
+  }
+  .tabs a:hover { color: var(--ink); background: var(--sheet-hover); }
+  .tabs a[aria-selected='true'] {
+    border-color: var(--rule);
+    border-top-color: var(--teal);
+    border-bottom-color: var(--paper);
+    background: var(--paper);
+    color: var(--ink);
+  }
+
   .card h2 { margin-bottom: 2px; }
   .sub { margin: 0 0 14px; color: var(--ink-4); font-size: 12.5px; }
 

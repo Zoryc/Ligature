@@ -67,7 +67,7 @@ export class CompilerClient {
     return r.body
   }
 
-  async health(): Promise<boolean> {
-    try { return (await this.call('GET', '/healthz', undefined, undefined, 3000)).status === 200 } catch { return false }
+  async health(timeoutMs = 3000): Promise<boolean> {
+    try { return (await this.call('GET', '/healthz', undefined, undefined, timeoutMs)).status === 200 } catch { return false }
   }
 }

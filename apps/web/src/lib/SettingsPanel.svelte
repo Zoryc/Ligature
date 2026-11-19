@@ -1,10 +1,9 @@
 <script lang="ts" module>
   import type { Engine } from '@ligature/shared'
+  import { ENGINE_LABELS, engineLabel } from './engines.ts'
 
-  export const ENGINE_LABELS: Record<Engine, string> = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX', lualatex: 'LuaLaTeX' }
-  export function engineLabel(e: string): string {
-    return (ENGINE_LABELS as Record<string, string>)[e] ?? e
-  }
+  // Re-exported for existing importers (Project.svelte); the labels live in engines.ts.
+  export { ENGINE_LABELS, engineLabel }
 </script>
 
 <script lang="ts">

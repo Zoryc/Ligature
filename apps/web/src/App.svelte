@@ -53,7 +53,7 @@
 {:else if route.name === 'account'}
   <Account />
 {:else if route.name === 'admin'}
-  <Admin />
+  <Admin tab={route.tab} />
 {:else if route.name === 'project'}
   {#await loadProject()}
     <p class="loading">Loading…</p>

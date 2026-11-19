@@ -1,5 +1,5 @@
 import type {
-  AcceptInviteResponse, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, BuildResult, CreatedInvite,
+  AcceptInviteResponse, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, AuditCategory, AuditPage, BuildResult, CreatedInvite,
   CreateFileRequest, CreateInviteRequest, GcReport, ImportResponse, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me,
   Member, OutputName, ProjectDetail, ProjectSummary, RestoreRequest, RestoreResponse, SignupRequest,
   SynctexEditResponse, SynctexViewResponse, TrashEntry, TreeEntry, UpdateFileRequest, UpdateProjectRequest,
@@ -8,6 +8,17 @@ import type {
 } from '@ligature/shared'
 
 export type { BuildResult }
+
+/** Filters of GET /api/admin/audit (docs/M4.md §2). `since` inclusive, `until` exclusive (ms). */
+export interface AuditQuery {
+  before?: number
+  limit?: number
+  category?: AuditCategory
+  actor?: string
+  project?: string
+  since?: number
+  until?: number
+}
 
 export class ApiError extends Error {
   readonly status: number
@@ -76,6 +87,13 @@ export const api = {
   adminStorage: () => request<StorageReport>('GET', '/api/admin/storage'),
   /** Runs the garbage collection now (or joins the run in progress) and returns its report. */
   adminRunGc: () => request<GcReport>('POST', '/api/admin/gc'),
+  /** One page of the audit log, newest first; pass the previous page's `next` as `before` for older entries. */
+  adminAudit: (q: AuditQuery = {}) => {
+    const s = new URLSearchParams()
+    for (const [k, v] of Object.entries(q)) if (v !== undefined) s.set(k, String(v))
+    const qs = s.toString()
+    return request<AuditPage>('GET', `/api/admin/audit${qs ? `?${qs}` : ''}`)
+  },
 
   // projects
   projects: () => request<ProjectSummary[]>('GET', '/api/projects'),

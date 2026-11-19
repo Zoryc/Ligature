@@ -162,4 +162,8 @@ export const MIGRATIONS: string[] = [
   /* 5: Folio UI — "changed by" for shared project settings, read from the audit log */ `
   CREATE INDEX audit_log_project_action ON audit_log(project_id, action, id);
   `,
+
+  /* 6: M4 — the audit log page filters by person (docs/M4.md §2) */ `
+  CREATE INDEX audit_log_actor ON audit_log(actor_id, id);
+  `,
 ]

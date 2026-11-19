@@ -13,11 +13,14 @@ import { zipRoutes } from './routes/zip.ts'
 import { synctexRoutes } from './routes/synctex.ts'
 import { versionRoutes } from './routes/versions.ts'
 import { serveSpa } from './static.ts'
+import { healthHandler, type Health } from '../health/health.ts'
 
 export interface AppDeps extends RouteDeps {
   isAllowedOrigin: (origin: string | null | undefined) => boolean
   /** Built SPA directory (apps/web/dist); null = do not serve it (dev uses Vite). */
   webDistDir: string | null
+  /** GET/HEAD /healthz (docs/M4.md §1); absent = no such route. */
+  health?: Health
 }
 
 /** JSON bodies are small; uploads (raw bodies) have their own limit. */
@@ -62,6 +65,8 @@ export function createApp(deps: AppDeps) {
   app.use('/api/admin/*', authed, requireAdmin())
 
   app.get('/api/health', c => c.json({ ok: true }))
+  // Outside /api (like the compiler's own /healthz), no login; Hono answers HEAD from this GET route.
+  if (deps.health) app.get('/healthz', healthHandler(deps.health))
 
   app.route('/api', authRoutes(deps))
   app.route('/api', adminRoutes(deps))

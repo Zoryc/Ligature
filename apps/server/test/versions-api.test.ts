@@ -301,7 +301,7 @@ describe('restore', () => {
     const list = (await owner.get<VersionPage>(V(p))).body.versions
     expect(list[0]).toMatchObject({ id: r.body.preRestoreVersionId, kind: 'pre_restore', label: 'Before restoring "V1"', createdBy: 'Eddie Editor' })
     expect(auditEntries(ts.lig.db, 'version.restore')).toEqual([expect.objectContaining({
-      actorId: expect.any(String), projectId: p.id, detail: { versionId: v1.id, preRestoreVersionId: r.body.preRestoreVersionId, restored: 5, trashed: 2 },
+      actorId: expect.any(String), projectId: p.id, detail: { versionId: v1.id, label: 'V1', versionAt: expect.any(Number), preRestoreVersionId: r.body.preRestoreVersionId, restored: 5, trashed: 2 },
     })])
 
     // Undo = restore the pre_restore version: every file is back; the re-created figure goes to the trash, with

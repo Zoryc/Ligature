@@ -32,6 +32,8 @@ const app = startLigature({
   isAllowedOrigin: originChecker(ALLOWED_ORIGINS, !PROD),
   production: PROD, devLogin: DEV_LOGIN, seed: DEV_ENV, trustProxy: env.TRUST_PROXY === '1',
   webDistDir: WEB_DIST_DIR,
+  // /healthz dials its own /collab with an origin the server accepts (default: http://localhost:<port>).
+  ...(ALLOWED_ORIGINS.size ? { healthOrigin: [...ALLOWED_ORIGINS][0] } : {}),
   limits: { trashRetentionMs: TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000 },
   gc: { projectRetentionMs: PROJECT_RETENTION_DAYS * 24 * 60 * 60 * 1000 },
 })
