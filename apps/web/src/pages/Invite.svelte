@@ -7,6 +7,7 @@
   import { loginPath, signupPath } from '../lib/routes.ts'
   import { errorMessage } from '../lib/errors.ts'
   import { toast } from '../lib/toasts.svelte.ts'
+  import Logo from '../lib/Logo.svelte'
 
   interface Props { token: string }
   let { token }: Props = $props()
@@ -40,30 +41,62 @@
   }
 </script>
 
-<main class="page narrow">
-  <h1>Project invite</h1>
-  {#if error}
-    <p class="error" role="alert">{error}</p>
-    <p><a href="#/projects">Go to your projects</a></p>
-  {:else if !preview}
-    <p class="muted">Checking the invite…</p>
-  {:else}
-    <p><strong>{preview.invitedBy}</strong> invited you to join <strong>{preview.projectName}</strong> as <strong>{preview.role}</strong>.</p>
-    <p class="muted">The link expires {new Date(preview.expiresAt).toLocaleString()}.</p>
-    {#if session.me}
-      <p>You are logged in as <strong>{session.me.displayName}</strong> ({session.me.username}).</p>
-      <div class="actions">
-        <button type="button" class="primary" disabled={busy} onclick={accept}>{busy ? 'Joining…' : 'Accept and open the project'}</button>
-        <a href="#/projects">Not now</a>
-      </div>
+<main class="auth">
+  <div class="brand"><Logo size={30} /></div>
+
+  <section class="sheet">
+    <h1>Project invite</h1>
+    {#if error}
+      <p class="error" role="alert">{error}</p>
+      <p><a href="#/projects">Go to your projects</a></p>
+    {:else if !preview}
+      <p class="muted">Checking the invite…</p>
     {:else}
-      <p>Log in or create an account to accept.</p>
-      <div class="actions">
-        <button type="button" class="primary" onclick={() => go(loginPath(`/invite/${encodeURIComponent(token)}`))}>Log in</button>
-        {#if !signupClosed}
-          <button type="button" onclick={() => go(signupPath(token))}>Create an account</button>
-        {/if}
+      <div class="project">
+        <span class="name">{preview.projectName}</span>
+        <span class="tag">{preview.role}</span>
       </div>
+      <p><strong>{preview.invitedBy}</strong> invited you to join this project as <strong>{preview.role}</strong>.</p>
+      <p class="muted small">The link expires {new Date(preview.expiresAt).toLocaleString()}.</p>
+      {#if session.me}
+        <p class="note">You are logged in as <strong>{session.me.displayName}</strong> ({session.me.username}).</p>
+        <div class="stack">
+          <button type="button" class="primary submit" disabled={busy} onclick={accept}>{busy ? 'Joining…' : 'Accept and open the project'}</button>
+          <a class="later" href="#/projects">Not now</a>
+        </div>
+      {:else}
+        <p class="note">Log in or create an account to accept.</p>
+        <div class="stack">
+          <button type="button" class="primary submit" onclick={() => go(loginPath(`/invite/${encodeURIComponent(token)}`))}>Log in</button>
+          {#if !signupClosed}
+            <button type="button" class="submit" onclick={() => go(signupPath(token))}>Create an account</button>
+          {/if}
+        </div>
+      {/if}
     {/if}
-  {/if}
+  </section>
 </main>
+
+<style>
+  .auth { max-width: 400px; margin: 10vh auto 64px; padding: 0 20px; }
+  .brand { display: flex; justify-content: center; margin-bottom: 22px; }
+  .sheet { background: var(--sheet); border: 1px solid var(--rule); padding: 28px 32px 30px; }
+  h1 { font-size: 22px; margin: 0 0 18px; }
+  .sheet > p { margin: 0 0 12px; }
+  .project {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    background: var(--paper);
+    border-left: 2px solid var(--teal);
+  }
+  .project .name { font: 600 18px/1.25 var(--font-doc); color: var(--ink); overflow-wrap: anywhere; }
+  .small { font-size: 12px; }
+  .note { color: var(--ink-3); }
+  .stack { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 18px; }
+  .submit { width: 100%; min-height: 34px; font-size: 13px; }
+  .later { align-self: center; margin-top: 4px; }
+</style>

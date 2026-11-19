@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { onDestroy, untrack, type Snippet } from 'svelte'
   import type { PdfRect } from '@ligature/shared'
   import { pagesInView } from './pdfLayout.ts'
   import { cssPointToPdf, pageCssSize, pageScale, pdfRectToCss, scrollTargetFor, stepZoom } from './pdfCoords.ts'
@@ -27,9 +27,13 @@
     onInverseSearch?: (page: number, x: number, y: number) => void
     /** Tooltip of the pages (e.g. "Double-click to jump to the source"). */
     pageTitle?: string
+    /** Left part of the toolbar (compile button). */
+    toolbar?: Snippet
+    /** Shown between the toolbar and the pages (build status). */
+    status?: Snippet
   }
 
-  let { url, placeholder = 'No PDF yet.', onInverseSearch, pageTitle = '' }: Props = $props()
+  let { url, placeholder = 'No PDF yet.', onInverseSearch, pageTitle = '', toolbar, status }: Props = $props()
 
   /** One page: a placeholder of the page's exact size; its canvas exists only while near the viewport. */
   interface Slot {
@@ -61,6 +65,10 @@
   let loading = $state(false)
   let error = $state<string | null>(null)
   let hasPages = $state(false)
+  let pageCount = $state(0)
+  /** The page at the middle of the view (1-based). */
+  let currentPage = $state(1)
+  let scrollFrame = 0
   /** Multiple of the fit-to-width size. */
   let zoom = $state(1)
   /** CSS width of a page at zoom 1 (the pane's width when the PDF was loaded). */
@@ -193,11 +201,13 @@
       scroller.scrollLeft = left
       const observer = observe(slots, d)
       hasPages = slots.length > 0
+      pageCount = slots.length
 
       const old = current
       current = { doc: d, slots, observer }
       doc = null
       dispose(old)
+      updateCurrentPage()
     } catch (e) {
       if (my === seq) error = `Could not load the PDF: ${(e as Error).message ?? String(e)}`
     } finally {
@@ -231,6 +241,26 @@
     scroller.scrollTop = Math.max(0, mid * scroller.scrollHeight - scroller.clientHeight / 2)
     // A fresh observer reports every page once, so the pages now near the view get rendered.
     shown.observer = observe(shown.slots, shown.doc)
+  }
+
+  function updateCurrentPage(): void {
+    const shown = current
+    if (!shown) return
+    const mid = scroller.scrollTop + scroller.clientHeight / 2
+    let n = 1
+    for (const slot of shown.slots) {
+      if (slot.el.offsetTop <= mid) n = slot.num
+      else break
+    }
+    currentPage = n
+  }
+
+  function onScroll(): void {
+    if (scrollFrame) return
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0
+      updateCurrentPage()
+    })
   }
 
   function slotOf(el: EventTarget | null): Slot | null {
@@ -282,36 +312,90 @@
   }
 
   onDestroy(() => {
+    if (scrollFrame) cancelAnimationFrame(scrollFrame)
     seq++
     dispose(current)
     current = null
   })
 </script>
 
-<div class="pdf" bind:this={scroller}>
-  {#if hasPages}
-    <div class="zoom" role="toolbar" aria-label="Zoom">
-      <button type="button" title="Zoom out" onclick={() => setZoom(stepZoom(zoom, -1))}>−</button>
-      <span class="pct">{Math.round(zoom * 100)}%</span>
-      <button type="button" title="Zoom in" onclick={() => setZoom(stepZoom(zoom, 1))}>+</button>
-      <button type="button" title="Fit the page width" onclick={() => setZoom(1)}>Fit</button>
-    </div>
-  {/if}
-  {#if loading}<div class="badge">Loading PDF…</div>{/if}
-  {#if error}<div class="error">{error}</div>{/if}
-  {#if !url && !hasPages}<div class="placeholder">{placeholder}</div>{/if}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="pages" bind:this={pagesHost} ondblclick={dblclick} title={pageTitle}></div>
-</div>
+<section class="pdfview">
+  <div class="bar" role="toolbar" aria-label="PDF">
+    {@render toolbar?.()}
+    <span class="spacer"></span>
+    {#if hasPages}
+      <span class="pageno" title="Page in view / pages">{currentPage}&thinsp;/&thinsp;{pageCount}</span>
+      <span class="group" role="group" aria-label="Zoom">
+        <button type="button" title="Zoom out" aria-label="Zoom out" onclick={() => setZoom(stepZoom(zoom, -1))}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M5 12h14" /></svg>
+        </button>
+        <span class="pct" title="Zoom (100% = fit the width)">{Math.round(zoom * 100)}%</span>
+        <button type="button" title="Zoom in" aria-label="Zoom in" onclick={() => setZoom(stepZoom(zoom, 1))}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M5 12h14M12 5v14" /></svg>
+        </button>
+      </span>
+      <button type="button" class="fit" class:on={zoom === 1} title="Fit the page width" onclick={() => setZoom(1)}>Fit</button>
+    {/if}
+  </div>
+  {@render status?.()}
+  <div class="pdf" bind:this={scroller} onscroll={onScroll}>
+    {#if loading}<div class="badge">Loading PDF…</div>{/if}
+    {#if error}<div class="error">{error}</div>{/if}
+    {#if !url && !hasPages}<div class="placeholder">{placeholder}</div>{/if}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="pages" bind:this={pagesHost} ondblclick={dblclick} title={pageTitle}></div>
+  </div>
+</section>
 
 <style>
+  .pdfview {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper-3);
+  }
+  .bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .spacer { flex: 1; }
+  .pageno {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--rule-strong);
+    background: var(--sheet);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+  }
+  .group { display: inline-flex; height: 28px; border: 1px solid var(--rule-strong); background: var(--sheet); }
+  .group button { border: 0; min-height: 0; width: 28px; padding: 0; background: transparent; }
+  .group button:hover { background: var(--paper-2); }
+  .pct {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+    border-left: 1px solid var(--rule-strong);
+    border-right: 1px solid var(--rule-strong);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  .fit.on { background: var(--paper-2); }
   .pdf {
     position: relative;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow: auto;
     /* Reserve the scrollbar's room, so fit-to-width pages do not overflow once the scrollbar appears. */
     scrollbar-gutter: stable;
-    background: #e5e5e5;
   }
   /*
    * As wide as the widest page (at least the pane), pages centred inside: a page zoomed wider than the
@@ -330,58 +414,41 @@
   .pages :global(.pdf-page) {
     flex: none;
     position: relative;
-    background: white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    background: #FFFFFF;
+    outline: 1px solid var(--rule-strong);
   }
   .pages :global(.synctex-box) {
     position: absolute;
     pointer-events: none;
-    background: rgba(255, 200, 0, 0.35);
-    outline: 2px solid rgba(230, 150, 0, 0.9);
+    background: rgba(240, 200, 60, 0.32);
+    outline: 1.5px solid rgba(168, 110, 0, 0.85);
     animation: synctex-fade 2.5s ease-in forwards;
   }
   @keyframes -global-synctex-fade {
     0%, 50% { opacity: 1; }
     100% { opacity: 0; }
   }
-  .zoom {
-    position: sticky;
-    top: 0;
-    left: 0;
-    z-index: 2;
-    display: flex;
-    gap: 4px;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 3px 6px;
-    background: rgba(229, 229, 229, 0.92);
-    border-bottom: 1px solid #d0d0d0;
-    font-size: 12px;
-  }
-  .zoom button { padding: 0 8px; font-size: 12px; }
-  .pct { min-width: 3.5em; text-align: center; }
   .pages :global(canvas) {
     display: block;
   }
   .badge {
     position: sticky;
-    top: 4px;
-    margin: 4px auto 0;
+    top: 8px;
+    margin: 8px auto 0;
     width: max-content;
-    background: #333;
-    color: white;
+    background: var(--ink);
+    color: var(--paper);
     font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 3px;
+    padding: 4px 10px;
     z-index: 1;
   }
   .error {
-    margin: 8px;
-    color: #b00020;
+    margin: 12px;
+    color: var(--red);
   }
   .placeholder {
-    margin: 24px;
-    color: #666;
+    margin: 48px 24px;
+    color: var(--ink-4);
     text-align: center;
   }
 </style>

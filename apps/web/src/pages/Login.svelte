@@ -4,6 +4,7 @@
   import { go } from '../lib/router.svelte.ts'
   import { signupPath } from '../lib/routes.ts'
   import { errorMessage } from '../lib/errors.ts'
+  import Logo from '../lib/Logo.svelte'
 
   interface Props { next: string | null }
   let { next }: Props = $props()
@@ -55,47 +56,65 @@
   }
 </script>
 
-<main class="page narrow">
-  <h1>Log in to Ligature</h1>
+<main class="auth">
+  <div class="brand"><Logo size={30} /></div>
 
-  {#if instance && !instance.hasUsers}
-    <p class="warning">This server has no accounts yet. <a href="#/signup">Create the first account</a>; it becomes the administrator.</p>
-  {/if}
+  <section class="sheet">
+    <h1>Log in to Ligature</h1>
 
-  {#if session.me}
-    <p>You are logged in as <strong>{session.me.displayName}</strong> ({session.me.username}).
-      <button type="button" class="link" onclick={done}>Continue</button> or
-      <button type="button" class="link" onclick={logout}>log out</button>.</p>
-  {/if}
+    {#if instance && !instance.hasUsers}
+      <p class="warning">This server has no accounts yet. <a href="#/signup">Create the first account</a>; it becomes the administrator.</p>
+    {/if}
 
-  <form class="form" onsubmit={submit}>
-    <label>Username <input bind:value={username} autocomplete="username" autocapitalize="none" spellcheck="false" required /></label>
-    <label>Password <input bind:value={password} type="password" autocomplete="current-password" required /></label>
-    <div class="row">
-      <button type="submit" class="primary" disabled={busy || !username.trim() || !password}>{busy ? 'Logging in…' : 'Log in'}</button>
-    </div>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-  </form>
+    {#if session.me}
+      <p class="note">You are logged in as <strong>{session.me.displayName}</strong> ({session.me.username}).
+        <button type="button" class="link" onclick={done}>Continue</button> or
+        <button type="button" class="link" onclick={logout}>log out</button>.</p>
+    {/if}
+
+    <form class="form" onsubmit={submit}>
+      <label>Username <input bind:value={username} autocomplete="username" autocapitalize="none" spellcheck="false" required /></label>
+      <label>Password <input bind:value={password} type="password" autocomplete="current-password" required /></label>
+      <button type="submit" class="primary submit" disabled={busy || !username.trim() || !password}>{busy ? 'Logging in…' : 'Log in'}</button>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+    </form>
+  </section>
 
   {#if instance}
     {#if instance.registration === 'open' || inviteToken}
-      <p>No account yet? <a href="#{signupPath(inviteToken)}">Sign up</a></p>
+      <p class="foot">No account yet? <a href="#{signupPath(inviteToken)}">Sign up</a></p>
     {:else if instance.registration === 'invite-only' && instance.hasUsers}
-      <p class="muted">To create an account, open an invite link you received from a project owner.</p>
+      <p class="foot muted">To create an account, open an invite link you received from a project owner.</p>
     {:else if instance.hasUsers}
-      <p class="muted">Registration is closed. Ask an administrator for an account.</p>
+      <p class="foot muted">Registration is closed. Ask an administrator for an account.</p>
     {/if}
   {/if}
 
   {#if instance?.devLogin}
-    <section class="card">
-      <h2>Development quick login</h2>
+    <section class="dev">
+      <h2 class="eyebrow">Development quick login</h2>
       <p class="muted">Seeded users (no password needed here): alice = owner and admin, bob = editor, carol = viewer.</p>
       <div class="actions">
         {#each DEV_USERS as u (u)}
-          <button type="button" disabled={busy} onclick={() => quick(u)}>Log in as {u}</button>
+          <button type="button" class="small" disabled={busy} onclick={() => quick(u)}>Log in as {u}</button>
         {/each}
       </div>
     </section>
   {/if}
 </main>
+
+<style>
+  .auth { max-width: 400px; margin: 10vh auto 64px; padding: 0 20px; }
+  .brand { display: flex; justify-content: center; margin-bottom: 22px; }
+  .sheet { background: var(--sheet); border: 1px solid var(--rule); padding: 28px 32px 30px; }
+  h1 { font-size: 22px; margin: 0 0 18px; }
+  .sheet > p { margin: 0 0 16px; }
+  .note { color: var(--ink-3); }
+  .submit { width: 100%; min-height: 34px; margin-top: 4px; font-size: 13px; }
+  .form .error { margin: 0; }
+  .foot { text-align: center; margin: 16px 0 0; color: var(--ink-3); }
+  .foot.muted { color: var(--ink-4); }
+  .dev { margin-top: 28px; padding: 14px 16px; border: 1px dashed var(--rule-strong); }
+  .dev h2 { margin: 0 0 6px; }
+  .dev p { margin: 0 0 10px; font-size: 12px; }
+</style>

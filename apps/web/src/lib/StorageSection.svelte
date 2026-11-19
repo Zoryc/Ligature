@@ -109,7 +109,7 @@
           <tbody>
             {#each rows as p (p.id)}
               <tr class:deleted={p.deleted}>
-                <td>{p.name}{#if p.deleted}{' '}<span class="muted">(deleted)</span>{/if}</td>
+                <td><span class="pname">{p.name}</span>{#if p.deleted}{' '}<span class="muted">(deleted)</span>{/if}</td>
                 <td>{p.owner || '—'}</td>
                 <td class="num">{p.liveFiles}</td>
                 <td class="num">{formatBytes(p.liveBytes)}</td>
@@ -137,31 +137,44 @@
 </section>
 
 <style>
-  .head { display: flex; align-items: center; gap: 8px; }
+  .head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .head h2 { margin: 0; }
   .spacer { flex: 1; }
-  h3 { font-size: 14px; margin: 16px 0 6px; }
+  h3 {
+    margin: 22px 0 8px;
+    font: 600 10.5px/1.2 var(--font-ui);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
   .totals {
     display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 4px 16px;
-    margin: 12px 0 0;
+    grid-template-columns: 170px minmax(0, 1fr);
+    margin: 0;
+    border-top: 1px solid var(--rule-soft);
   }
-  .totals dt { font-weight: 600; color: #444; }
-  .totals dd { margin: 0; }
-  .hint { display: block; font-size: 12px; color: #666; }
+  .totals dt, .totals dd { padding: 7px 0; border-bottom: 1px solid var(--rule-soft); }
+  .totals dt { font-weight: 600; color: var(--ink-2); }
+  .totals dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .hint { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-4); }
   .table-wrap { overflow-x: auto; }
-  .num { text-align: right; white-space: nowrap; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   table.list th.num { text-align: right; }
   .sort {
+    min-height: 0;
     border: 0;
     background: none;
     padding: 0;
     font: inherit;
-    font-weight: 600;
     color: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
   }
-  .sort:hover:not(:disabled) { background: none; text-decoration: underline; }
-  tr.deleted td { color: #999; }
-  .gc { margin: 0; padding-left: 18px; }
+  .sort:hover:not(:disabled) { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+  th[aria-sort='ascending'] .sort, th[aria-sort='descending'] .sort { color: var(--teal); }
+  .pname { font: 600 14px/1.3 var(--font-doc); }
+  tr.deleted td { color: var(--ink-4); }
+  tr.deleted { background: var(--paper); }
+  .gc { margin: 0; padding-left: 18px; color: var(--ink-2); }
+  .gc li { margin: 2px 0; }
 </style>

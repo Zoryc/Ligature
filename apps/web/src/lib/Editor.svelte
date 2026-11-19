@@ -2,21 +2,25 @@
   import { onDestroy, onMount } from 'svelte'
   import type * as Y from 'yjs'
   import type { Awareness } from 'y-protocols/awareness'
-  import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state'
+  import { Compartment, EditorState, Prec, StateEffect, StateField, type Extension } from '@codemirror/state'
   import {
-    Decoration, EditorView, crosshairCursor, drawSelection, dropCursor, highlightActiveLine, highlightActiveLineGutter,
-    highlightSpecialChars, keymap, lineNumbers, rectangularSelection, type DecorationSet,
+    Decoration, EditorView, WidgetType, crosshairCursor, drawSelection, dropCursor, highlightActiveLine,
+    highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers, rectangularSelection, type DecorationSet,
   } from '@codemirror/view'
   import { defaultKeymap, indentWithTab } from '@codemirror/commands'
   import {
-    StreamLanguage, bracketMatching, defaultHighlightStyle, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting,
+    HighlightStyle, StreamLanguage, bracketMatching, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting,
   } from '@codemirror/language'
+  import { tags } from '@lezer/highlight'
   import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
   import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
-  import { lintGutter, lintKeymap, setDiagnostics, type Diagnostic as LintDiagnostic } from '@codemirror/lint'
+  import {
+    forEachDiagnostic, lintGutter, lintKeymap, setDiagnostics, setDiagnosticsEffect, type Diagnostic as LintDiagnostic,
+  } from '@codemirror/lint'
   import { stex } from '@codemirror/legacy-modes/mode/stex'
   import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
   import type { EditorDiagnostic } from './diagnostics.ts'
+  import type { Explanation, QuickFix } from './explain.ts'
 
   interface Props {
     ytext: Y.Text
@@ -25,9 +29,21 @@
     readOnly: boolean
     /** Diagnostics of the last build for this file (gutter markers + underlines; hover shows the message). */
     diagnostics?: EditorDiagnostic[]
+    /** Font size of the source in px (personal setting). */
+    fontSize?: number
+    /** Wrap long lines at the editor's edge (personal setting). */
+    wrap?: boolean
+    /** Plain-language explanation of a problem, shown under its line while the cursor is on it. */
+    explain?: (d: { message: string; severity: string; source?: string }) => Explanation | null
+    /** The quick-fix button of an explanation was pressed. */
+    onFix?: (fix: QuickFix) => void
+    /** The main cursor moved (1-based line, 1-based column). */
+    onCursor?: (line: number, column: number) => void
   }
 
-  let { ytext, awareness, undoManager, readOnly, diagnostics = [] }: Props = $props()
+  let {
+    ytext, awareness, undoManager, readOnly, diagnostics = [], fontSize = 14, wrap = true, explain, onFix, onCursor,
+  }: Props = $props()
 
   let host: HTMLDivElement
   let view: EditorView | undefined = $state.raw(undefined)
@@ -48,6 +64,110 @@
   })
   let flashTimer: ReturnType<typeof setTimeout> | null = null
 
+  // ---------- inline explanation of the problem under the cursor (Folio) ----------
+
+  class ExplainWidget extends WidgetType {
+    readonly severity: string
+    readonly message: string
+    readonly ex: Explanation
+    constructor(severity: string, message: string, ex: Explanation) {
+      super()
+      this.severity = severity
+      this.message = message
+      this.ex = ex
+    }
+    override eq(o: ExplainWidget) { return o.message === this.message && o.ex.text === this.ex.text && o.severity === this.severity }
+    toDOM() {
+      const box = document.createElement('div')
+      box.className = `cm-explain cm-explain-${this.severity}`
+      const text = document.createElement('div')
+      text.className = 'cm-explain-text'
+      const title = document.createElement('strong')
+      title.textContent = this.message
+      const body = document.createElement('span')
+      body.textContent = this.ex.text
+      text.append(title, body)
+      box.append(text)
+      const fix = this.ex.fix
+      if (fix && !readOnly) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'cm-explain-fix'
+        b.textContent = fix.label
+        b.addEventListener('mousedown', e => e.preventDefault())
+        b.addEventListener('click', () => onFix?.(fix))
+        box.append(b)
+      }
+      return box
+    }
+    override ignoreEvent() { return true }
+  }
+
+  function explainDecorations(state: EditorState): DecorationSet {
+    if (!explain) return Decoration.none
+    const line = state.doc.lineAt(state.selection.main.head)
+    let found: { d: LintDiagnostic; from: number; to: number } | null = null
+    forEachDiagnostic(state, (d, from, to) => {
+      if (found && (found.d.severity === 'error' || d.severity !== 'error')) return
+      const a = state.doc.lineAt(from).number
+      const b = state.doc.lineAt(Math.max(from, to - (to > from ? 1 : 0))).number
+      if (line.number >= a && line.number <= b) found = { d, from, to }
+    })
+    const f = found as { d: LintDiagnostic; from: number; to: number } | null
+    if (!f) return Decoration.none
+    const ex = explain({ message: f.d.message, severity: f.d.severity, ...(f.d.source ? { source: f.d.source } : {}) })
+    const sev = f.d.severity === 'error' ? 'error' : 'warning'
+    const first = state.doc.lineAt(f.from)
+    const last = state.doc.lineAt(Math.max(f.from, f.to - (f.to > f.from ? 1 : 0)))
+    const ranges = [Decoration.line({ class: `cm-problem-line cm-problem-${sev}` }).range(first.from)]
+    if (ex) ranges.push(Decoration.widget({ widget: new ExplainWidget(sev, f.d.message, ex), block: true, side: 1 }).range(last.to))
+    return Decoration.set(ranges, true)
+  }
+
+  // Block widgets must come from a state field (not a view plugin).
+  const explainField = StateField.define<DecorationSet>({
+    create: explainDecorations,
+    update(deco, tr) {
+      const diagsChanged = tr.effects.some(e => e.is(setDiagnosticsEffect))
+      if (tr.docChanged || tr.selection || diagsChanged) return explainDecorations(tr.state)
+      return deco
+    },
+    provide: f => EditorView.decorations.from(f),
+  })
+
+  // ---------- Folio look ----------
+
+  const folioHighlight = HighlightStyle.define([
+    { tag: tags.tagName, color: 'var(--syn-command)' },
+    { tag: tags.atom, color: 'var(--syn-env)' },
+    { tag: tags.keyword, color: 'var(--syn-math)' },
+    { tag: tags.number, color: 'var(--ink)' },
+    { tag: tags.string, color: 'var(--syn-key)' },
+    { tag: tags.comment, color: 'var(--syn-comment)', fontStyle: 'italic' },
+    { tag: tags.bracket, color: 'var(--ink-3)' },
+    { tag: tags.invalid, color: 'var(--red)' },
+  ])
+
+  const look = new Compartment()
+  const wrapping = new Compartment()
+
+  function lookFor(size: number): Extension {
+    return EditorView.theme({
+      '.cm-scroller': { fontSize: `${size}px` },
+    })
+  }
+
+  $effect(() => {
+    const v = view
+    const size = fontSize
+    if (v) v.dispatch({ effects: look.reconfigure(lookFor(size)) })
+  })
+  $effect(() => {
+    const v = view
+    const w = wrap
+    if (v) v.dispatch({ effects: wrapping.reconfigure(w ? EditorView.lineWrapping : []) })
+  })
+
   /** Move the cursor to a 1-based line and scroll it into view; `flash` highlights the line for a moment. */
   export function gotoLine(line: number, flash = false): void {
     if (!view) return
@@ -64,6 +184,20 @@
         view?.dispatch({ effects: flashEffect.of(null) })
       }, 1600)
     }
+  }
+
+  /** The text in the editor now. */
+  export function text(): string | null {
+    return view ? view.state.doc.toString() : null
+  }
+
+  /** Insert text as a local edit (undoable, synced) and flash its line. False when read-only or not ready. */
+  export function insertText(at: number, insert: string): boolean {
+    if (!view || readOnly) return false
+    const pos = Math.min(Math.max(0, at), view.state.doc.length)
+    view.dispatch({ changes: { from: pos, insert }, userEvent: 'input.quickfix' })
+    gotoLine(view.state.doc.lineAt(pos).number, true)
+    return true
   }
 
   /** The main cursor: 1-based line, 0-based column. */
@@ -90,6 +224,12 @@
     if (v) v.dispatch(setDiagnostics(v.state, toLint(list, v.state.doc.length)))
   })
 
+  function reportCursor(state: EditorState) {
+    const head = state.selection.main.head
+    const line = state.doc.lineAt(head)
+    onCursor?.(line.number, head - line.from + 1)
+  }
+
   onMount(() => {
     // Same as codemirror's basicSetup, minus history(): undo/redo goes through the Y.UndoManager
     // so that only local edits are undone, never a collaborator's.
@@ -97,12 +237,19 @@
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
-      foldGutter(),
+      foldGutter({
+        markerDOM: open => {
+          const el = document.createElement('span')
+          el.className = `cm-fold-marker${open ? ' open' : ''}`
+          el.textContent = open ? '▾' : '▸'
+          return el
+        },
+      }),
       drawSelection(),
       dropCursor(),
       EditorState.allowMultipleSelections.of(true),
       indentOnInput(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      syntaxHighlighting(folioHighlight),
       bracketMatching(),
       closeBrackets(),
       autocompletion(),
@@ -113,11 +260,14 @@
       StreamLanguage.define(stex),
       // In LaTeX, ' and " are not paired quotes: only auto-close brackets.
       EditorState.languageData.of(() => [{ closeBrackets: { brackets: ['(', '[', '{'] } }]),
-      EditorView.lineWrapping,
+      wrapping.of(wrap ? EditorView.lineWrapping : []),
+      look.of(lookFor(fontSize)),
       // Ctrl/Cmd+S (compile) and Ctrl+Alt+J (show in PDF) are handled by the project page for the whole window.
       Prec.high(keymap.of(yUndoManagerKeymap)),
       lintGutter(),
       flashField,
+      explainField,
+      EditorView.updateListener.of(u => { if (u.selectionSet || u.docChanged) reportCursor(u.state) }),
       keymap.of([
         ...closeBracketsKeymap,
         ...defaultKeymap,
@@ -137,6 +287,7 @@
       parent: host,
       state: EditorState.create({ doc: ytext.toString(), extensions }),
     })
+    reportCursor(view.state)
   })
 
   onDestroy(() => {
@@ -152,19 +303,111 @@
   .editor {
     height: 100%;
     overflow: hidden;
+    background: var(--sheet);
   }
   .editor :global(.cm-editor) {
     height: 100%;
+    color: var(--ink);
+    background: var(--sheet);
   }
+  .editor :global(.cm-editor.cm-focused) { outline: none; }
   .editor :global(.cm-scroller) {
-    font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-    font-size: 14px;
+    font-family: var(--font-mono);
+    line-height: 1.6;
   }
+  .editor :global(.cm-content) { padding: 10px 0 40vh; caret-color: var(--ink); }
+  .editor :global(.cm-line) { padding: 0 16px 0 12px; }
+  .editor :global(.cm-gutters) {
+    background: var(--sheet);
+    border-right: 1px solid var(--rule-soft);
+    color: var(--ink-4);
+  }
+  .editor :global(.cm-lineNumbers .cm-gutterElement) { padding: 0 10px 0 14px; min-width: 44px; font-variant-numeric: tabular-nums; }
+  .editor :global(.cm-activeLineGutter) { background: var(--paper-2); color: var(--ink); }
+  .editor :global(.cm-activeLine) { background: rgba(236, 231, 221, 0.55); }
+  .editor :global(.cm-selectionBackground) { background: #D9E6E3 !important; }
+  .editor :global(.cm-focused .cm-selectionBackground) { background: #C7DCD8 !important; }
+  .editor :global(.cm-cursor) { border-left: 2px solid var(--ink); }
+  .editor :global(.cm-matchingBracket) { background: var(--teal-tint); outline: 1px solid var(--teal-edge); color: inherit; }
+  .editor :global(.cm-selectionMatch) { background: #EFE7C9; }
+  .editor :global(.cm-fold-marker) { color: var(--ink-4); cursor: pointer; padding: 0 3px; font-size: 11px; }
+  .editor :global(.cm-foldPlaceholder) { background: var(--paper-2); border: 1px solid var(--rule-strong); border-radius: 0; color: var(--ink-3); }
+
+  /* Problems: square marks in the gutter, wavy underline in the text */
+  .editor :global(.cm-gutter-lint) { width: 18px; }
+  .editor :global(.cm-gutter-lint .cm-gutterElement) { padding: 0; display: flex; align-items: center; justify-content: center; }
+  .editor :global(.cm-lint-marker) { width: 12px; height: 12px; content: none; }
+  .editor :global(.cm-lint-marker-error) {
+    background: var(--red) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3.5 3.5l5 5M8.5 3.5l-5 5' stroke='white' stroke-width='1.6'/%3E%3C/svg%3E") center / 12px no-repeat;
+  }
+  .editor :global(.cm-lint-marker-warning) {
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 1L11.5 11H0.5Z' fill='%23A86E00'/%3E%3Cpath d='M6 4.5v3.2M6 8.6v1' stroke='white' stroke-width='1.3'/%3E%3C/svg%3E") center / 12px no-repeat;
+  }
+  .editor :global(.cm-lint-marker-info) { background: var(--ink-4); width: 8px; height: 8px; }
+  .editor :global(.cm-lintRange-error) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 3 L1.5 0 L3 3 L4.5 0 L6 3' fill='none' stroke='%23B3261E' stroke-width='1'/%3E%3C/svg%3E");
+  }
+  .editor :global(.cm-lintRange-warning) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 3 L1.5 0 L3 3 L4.5 0 L6 3' fill='none' stroke='%23A86E00' stroke-width='1'/%3E%3C/svg%3E");
+  }
+  .editor :global(.cm-tooltip) { border: 1px solid var(--rule-strong); background: var(--sheet); border-radius: 0; box-shadow: var(--shadow); }
+  .editor :global(.cm-tooltip-lint) { font-family: var(--font-ui); font-size: 12.5px; }
+  .editor :global(.cm-diagnostic) { padding: 5px 10px; border-left-width: 3px; }
+  .editor :global(.cm-diagnostic-error) { border-left-color: var(--red); }
+  .editor :global(.cm-diagnostic-warning) { border-left-color: var(--amber-mark); }
+  .editor :global(.cm-tooltip-autocomplete > ul > li[aria-selected]) { background: var(--teal); color: #FFFFFF; }
+  .editor :global(.cm-panels) { background: var(--paper); border-color: var(--rule); color: var(--ink); }
+  .editor :global(.cm-panels input), .editor :global(.cm-panels button) { min-height: 24px; font-size: 12px; }
+  .editor :global(.cm-searchMatch) { background: #F3E3A6; outline: 1px solid #D9B94F; }
+  .editor :global(.cm-searchMatch-selected) { background: #EBC75A; }
+
+  .editor :global(.cm-problem-error) { background: var(--red-tint); }
+  .editor :global(.cm-problem-warning) { background: var(--amber-tint); }
+  .editor :global(.cm-explain) {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 0;
+    padding: 8px 16px 9px 12px;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    line-height: 1.4;
+    border-top: 1px solid var(--red-rule);
+    border-bottom: 1px solid var(--red-rule);
+    background: var(--red-tint);
+  }
+  .editor :global(.cm-explain-warning) { background: var(--amber-tint); border-color: var(--amber-rule); }
+  .editor :global(.cm-explain-text) { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .editor :global(.cm-explain-text strong) { color: var(--red); font-weight: 600; font-family: var(--font-ui); }
+  .editor :global(.cm-explain-warning .cm-explain-text strong) { color: var(--amber); }
+  .editor :global(.cm-explain-text span) { color: var(--ink-2); }
+  .editor :global(.cm-explain-fix) {
+    flex: none;
+    font: 500 12px/1 var(--font-mono);
+    min-height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--rule-strong);
+    background: var(--sheet);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .editor :global(.cm-explain-fix:hover) { background: var(--paper-2); }
+
+  /* Collaborators' cursors (y-codemirror): square name flags */
+  .editor :global(.cm-ySelectionInfo) {
+    font: 600 10.5px/1 var(--font-ui);
+    padding: 3px 5px;
+    border-radius: 0;
+    opacity: 1;
+    top: -1.35em;
+  }
+  .editor :global(.cm-ySelectionCaret) { border-left-width: 2px; }
+
   .editor :global(.cm-flash-line) {
     animation: ligature-flash-line 1.6s ease-out;
   }
   @keyframes -global-ligature-flash-line {
-    from { background-color: rgba(255, 200, 0, 0.6); }
+    from { background-color: rgba(240, 200, 60, 0.55); }
     to { background-color: transparent; }
   }
 </style>

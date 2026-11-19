@@ -264,7 +264,10 @@
       <label class="filter"><input type="checkbox" bind:checked={namedOnly} /> Named only</label>
       <span class="spacer"></span>
       {#if canEdit}
-        <button type="button" disabled={busy} onclick={nameCurrent} title="Save the project as it is now, with a name">Name current version</button>
+        <button type="button" class="small" disabled={busy} onclick={nameCurrent} title="Save the project as it is now, with a name">
+          <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" fill="none" aria-hidden="true"><path d="M5 4h14v16l-7-5-7 5z" /></svg>
+          Name current version
+        </button>
       {/if}
     </div>
     {#if listError}<p class="error">{listError}</p>{/if}
@@ -299,7 +302,7 @@
     {/if}
   {:else}
     {@const v = selected}
-    <button type="button" class="link" onclick={back}>&larr; All versions</button>
+    <div class="back"><button type="button" class="link" onclick={back}>&larr; All versions</button></div>
     <div class="detail-head">
       <div class="title-line">
         <span class="icon kind-{v.kind}" aria-label={kindName(v.kind)}>{kindIcon(v.kind)}</span>
@@ -315,10 +318,13 @@
         <button type="button" disabled={busy} onclick={() => nameVersion(v)}>{v.label ? 'Rename' : 'Name this version'}</button>
         <button type="button" class="primary" disabled={busy} onclick={() => restoreAll(v)}>Restore this version</button>
       {/if}
-      <a class="button" href={versionZipUrl(projectId, v.id)} download>Download as .zip</a>
+      <a class="button" href={versionZipUrl(projectId, v.id)} download>
+        <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" fill="none" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 14v6h16v-6" /></svg>
+        Download as .zip
+      </a>
     </div>
     <div class="compare">
-      Compare with:
+      <span class="eyebrow">Compare with</span>
       <label><input type="radio" name="history-compare" checked={mode === 'previous'} onchange={() => setMode('previous')} /> previous version</label>
       <label><input type="radio" name="history-compare" checked={mode === 'current'} onchange={() => setMode('current')} /> current state</label>
       <button type="button" class="link" onclick={() => void loadDiff()} disabled={diffLoading}>Refresh</button>
@@ -348,7 +354,7 @@
                 {#if r.detail}<span class="muted small">{r.detail}</span>{/if}
               </button>
               {#if canEdit && r.inNew}
-                <button type="button" class="small-btn" disabled={busy} onclick={() => restoreFile(v, r)}
+                <button type="button" class="small restore-file" disabled={busy} onclick={() => restoreFile(v, r)}
                   title="Restore only this file as it was in this version">Restore this file</button>
               {/if}
             </li>
@@ -363,7 +369,7 @@
               <li>
                 <button type="button" class="file" onclick={() => openRow(r)}><span class="path">{r.path}</span></button>
                 {#if canEdit && r.inNew && mode === 'previous'}
-                  <button type="button" class="small-btn" disabled={busy} onclick={() => restoreFile(v, r)}>Restore this file</button>
+                  <button type="button" class="small restore-file" disabled={busy} onclick={() => restoreFile(v, r)}>Restore this file</button>
                 {/if}
               </li>
             {/each}
@@ -375,24 +381,48 @@
 </div>
 
 <style>
-  .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .spacer { flex: 1; }
-  .filter { display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; }
-  .day { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #555; margin: 12px 0 4px; }
-  .versions, .changes { list-style: none; margin: 0; padding: 0; }
-  .version {
+  .history { font-size: 13px; padding-bottom: 16px; }
+  .history > p { margin: 0; padding: 10px 20px; }
+  .small { font-size: 12px; }
+
+  /* List */
+  .toolbar {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
-    text-align: left;
-    border: 0;
-    border-bottom: 1px solid #eee;
-    border-radius: 0;
-    padding: 6px 4px;
-    background: none;
+    padding: 10px 20px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
   }
-  .version:hover:not(:disabled) { background: #f3f5ff; }
+  .spacer { flex: 1; }
+  .filter { display: flex; align-items: center; gap: 7px; color: var(--ink-2); cursor: pointer; }
+  .day {
+    margin: 0;
+    padding: 16px 20px 7px;
+    font: 600 10.5px/1.2 var(--font-ui);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .versions, .changes { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--rule-soft); }
+  .versions li + li, .changes li + li { border-top: 1px solid var(--rule-soft); }
+  .versions { border-top: 1px solid var(--rule-soft); }
+  .version {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 0;
+    padding: 8px 20px;
+    border: 0;
+    background: none;
+    color: var(--ink);
+    font: 400 13px/1.35 var(--font-ui);
+    text-align: left;
+    white-space: normal;
+  }
+  .version:hover:not(:disabled) { background: var(--sheet-hover); }
   .icon {
     width: 22px;
     height: 22px;
@@ -400,55 +430,86 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    background: #eee;
-    font-size: 12px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink-4);
+    font-size: 11px;
+    line-height: 1;
   }
-  .kind-named { background: #fff1c2; color: #8a5300; }
-  .kind-pre_restore { background: #e6ecff; color: #2a5bd7; }
-  .kind-compile { background: #e3f4e6; color: #1b7f3b; }
-  .kind-import { background: #f0e6ff; color: #5b2ab0; }
-  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .title.named { font-weight: 600; }
+  .kind-named { background: var(--amber-tint); border-color: var(--amber-rule); color: var(--amber); }
+  .kind-pre_restore { background: var(--teal-tint); border-color: var(--teal-edge); color: var(--teal); }
+  .kind-compile { background: var(--green-tint); border-color: var(--green); color: var(--green); }
+  .kind-import { background: var(--paper-2); border-color: var(--rule-strong); color: var(--ink-3); }
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  .title.named { font: 600 14px/1.3 var(--font-doc); color: var(--ink); }
   .meta { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { font-size: 12px; color: #555; font-family: ui-monospace, monospace; white-space: nowrap; }
-  .more { margin-top: 10px; width: 100%; }
-  .detail-head { margin: 10px 0; }
-  .title-line { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-  .small { font-size: 12px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-  a.button {
-    display: inline-block;
-    padding: 4px 10px;
-    border: 1px solid #bbb;
-    border-radius: 3px;
-    color: inherit;
-    text-decoration: none;
+  .badge { font: 11.5px/1 var(--font-mono); color: var(--ink-4); white-space: nowrap; }
+  .more { display: flex; margin: 14px 20px 0; width: calc(100% - 40px); }
+
+  /* Detail */
+  .back { padding: 12px 20px 0; }
+  .detail-head { padding: 10px 20px 14px; }
+  .title-line { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .title-line strong { font: 600 17px/1.25 var(--font-doc); color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+  .detail-head .muted { padding-left: 32px; line-height: 1.5; }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 20px 16px;
+    border-bottom: 1px solid var(--rule);
   }
-  a.button:hover { background: #f0f0f0; }
-  .compare { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 6px; }
-  .compare label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
-  .changes li { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #eee; }
+  .compare {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: center;
+    padding: 10px 20px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+  }
+  .compare label { display: flex; align-items: center; gap: 6px; color: var(--ink-2); cursor: pointer; }
+  .compare .link { margin-left: auto; font-size: 12px; }
+  .history > p.small { padding: 12px 20px 8px; }
+  .changes li { display: flex; align-items: center; gap: 8px; padding-right: 20px; }
+  .changes li:hover { background: var(--sheet-hover); }
   .file {
     flex: 1;
     min-width: 0;
     display: flex;
-    gap: 6px;
+    justify-content: flex-start;
+    gap: 8px;
     align-items: center;
-    text-align: left;
+    min-height: 34px;
+    padding: 6px 0 6px 20px;
     border: 0;
-    border-radius: 0;
     background: none;
-    padding: 5px 2px;
+    color: var(--ink);
+    font: 400 13px/1.3 var(--font-ui);
+    text-align: left;
   }
-  .file:hover:not(:disabled) { background: #f3f5ff; }
-  .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .change { font-size: 11px; padding: 0 6px; border-radius: 8px; background: #eee; white-space: nowrap; }
-  .change-added { background: #e3f4e6; color: #1b7f3b; }
-  .change-removed { background: #fde7ea; color: #b00020; }
-  .change-modified, .change-renamed { background: #fff1d6; color: #8a5300; }
-  .small-btn { font-size: 12px; padding: 1px 6px; white-space: nowrap; }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; }
+  .file:hover:not(:disabled) { background: none; }
+  .file:hover .path { text-decoration: underline; text-underline-offset: 2px; }
+  .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font: 12.5px/1.3 var(--font-mono); }
+  .change {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper);
+    color: var(--ink-3);
+    font: 600 10px/1 var(--font-ui);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .change-added { background: var(--green-tint); border-color: var(--green); color: var(--green); }
+  .change-removed { background: var(--red-tint); border-color: var(--red-rule); color: var(--red); }
+  .change-modified, .change-renamed { background: var(--amber-tint); border-color: var(--amber-rule); color: var(--amber); }
+  .restore-file { flex: none; }
+  details { margin-top: 4px; }
+  summary { padding: 10px 20px; cursor: pointer; }
+  summary:hover { color: var(--ink-2); }
 </style>

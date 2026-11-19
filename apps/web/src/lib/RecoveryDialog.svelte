@@ -57,12 +57,14 @@
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="recovery-title" aria-describedby="recovery-text">
-    <h2 id="recovery-title">{RECOVERY_TITLE}</h2>
-    <p id="recovery-text">{recoveryMessage(path)}</p>
-    {#if error}<p class="error">{error}</p>{/if}
-    {#if viewError}<p class="error">{viewError}</p>{/if}
+    <div class="intro">
+      <h2 id="recovery-title">{RECOVERY_TITLE}</h2>
+      <p id="recovery-text">{recoveryMessage(path)}</p>
+      {#if error}<p class="error">{error}</p>{/if}
+      {#if viewError}<p class="error">{viewError}</p>{/if}
+    </div>
     <div class="sides">
-      <div class="side-title">Your text (not saved)</div>
+      <div class="side-title mine">Your text (not saved)</div>
       <div class="side-title">Current version on the server{serverText === null ? ' (unavailable)' : ''}</div>
     </div>
     {#if loading}<p class="muted pad">Loading…</p>{/if}
@@ -78,7 +80,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
+    background: color-mix(in srgb, var(--ink) 28%, transparent);
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -86,36 +88,46 @@
     z-index: 150;
   }
   .dialog {
-    background: white;
-    border-radius: 4px;
-    padding: 16px 20px;
+    background: var(--sheet);
+    border: 1px solid var(--rule-strong);
     width: min(1100px, 94vw);
     max-height: 86vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow);
   }
-  h2 { margin: 0 0 8px; font-size: 16px; }
-  p { margin: 0 0 8px; }
+  .intro { padding: 20px 22px 14px; }
+  h2 { margin: 0 0 8px; font-size: 18px; line-height: 1.25; }
+  p { margin: 0 0 6px; color: var(--ink-2); line-height: 1.5; }
+  p.error { color: var(--red); }
+  p.muted { color: var(--ink-4); }
   .sides {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    border: 1px solid #ddd;
-    border-bottom: 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
     font-size: 12px;
     font-weight: 600;
-    background: #fafafa;
+    color: var(--ink-3);
+    background: var(--paper-2);
   }
-  .side-title { padding: 4px 10px; }
-  .side-title + .side-title { border-left: 1px solid #ddd; }
-  .pad { padding: 4px 10px; }
+  .side-title { padding: 6px 16px; }
+  .side-title.mine { box-shadow: inset 2px 0 0 var(--amber-mark); }
+  .side-title + .side-title { border-left: 1px solid var(--rule); }
+  .pad { margin: 0; padding: 8px 16px; }
   .merge {
     flex: 1;
     min-height: 120px;
     overflow: auto;
-    border: 1px solid #ddd;
     font-size: 13px;
   }
   .merge :global(.cm-editor) { height: auto; }
-  .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 22px;
+    background: var(--paper);
+    border-top: 1px solid var(--rule);
+  }
 </style>

@@ -101,32 +101,42 @@
 </script>
 
 <div class="trash">
-  <p class="muted hint">
-    Deleted files and folders stay here until they are deleted forever (automatically after a while).
-    {#if !canEdit}You can look, but only editors and the owner can restore or delete.{/if}
-  </p>
-  {#if loadError}
-    <p class="error">{loadError}</p>
-  {:else if !entries}
-    <p class="muted">Loading…</p>
-  {:else if sorted.length === 0}
-    <p class="muted">The trash is empty.</p>
-  {:else}
-    {#if isOwner}
-      <div class="top"><button type="button" class="danger" disabled={busy !== null} onclick={emptyAll}>Empty trash</button></div>
+  <div class="intro">
+    <p class="hint">
+      Deleted files and folders stay here until they are deleted forever (automatically after a while).
+      {#if !canEdit}You can look, but only editors and the owner can restore or delete.{/if}
+    </p>
+    {#if isOwner && entries && sorted.length > 0 && !loadError}
+      <button type="button" class="danger small" disabled={busy !== null} onclick={emptyAll}>Empty trash</button>
     {/if}
+  </div>
+  {#if loadError}
+    <p class="error pad">{loadError}</p>
+  {:else if !entries}
+    <p class="muted pad">Loading…</p>
+  {:else if sorted.length === 0}
+    <p class="muted pad empty">The trash is empty.</p>
+  {:else}
     <ul class="entries">
       {#each sorted as e (e.id)}
         {@const row = trashRow(e, now)}
         <li class:busy={busy === e.id}>
-          <div class="name" title={e.originalPath}><strong>{row.label}</strong> <span class="muted">in {row.from}</span></div>
+          <div class="name" title={e.originalPath}>
+            {#if e.kind === 'folder'}
+              <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" fill="none" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z" /></svg>
+            {:else}
+              <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" fill="none" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v4h4" /></svg>
+            {/if}
+            <strong>{row.label}</strong> <span class="muted">in <span class="from">{row.from}</span></span>
+          </div>
           <div class="meta muted">Deleted {row.deleted} · {row.size}</div>
-          <div class="meta" class:soon={row.expiresSoon} title="Expires {new Date(e.expiresAt).toLocaleString()}">{row.expiry}</div>
+          <div class="meta expiry" class:soon={row.expiresSoon} title="Expires {new Date(e.expiresAt).toLocaleString()}">{row.expiry}</div>
           {#if canEdit}
             <div class="buttons">
-              <button type="button" class="primary" disabled={busy !== null} onclick={() => restore(e)}>Restore</button>
-              <button type="button" disabled={busy !== null} onclick={() => restoreTo(e)}>Restore to…</button>
-              <button type="button" class="del" disabled={busy !== null} onclick={() => purge(e)}>Delete forever</button>
+              <button type="button" class="small primary" disabled={busy !== null} onclick={() => restore(e)}>Restore</button>
+              <button type="button" class="small" disabled={busy !== null} onclick={() => restoreTo(e)}>Restore to…</button>
+              <span class="spacer"></span>
+              <button type="button" class="small quiet del" disabled={busy !== null} onclick={() => purge(e)}>Delete forever</button>
             </div>
           {/if}
         </li>
@@ -136,20 +146,39 @@
 </div>
 
 <style>
-  .hint { font-size: 12px; margin-top: 0; }
-  .top { display: flex; justify-content: flex-end; margin-bottom: 8px; }
-  .entries { list-style: none; margin: 0; padding: 0; }
-  .entries li {
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 8px 10px;
-    margin-bottom: 8px;
+  .trash { font-size: 13px; }
+  .intro {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 12px 20px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
   }
+  .hint { flex: 1; margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.45; }
+  .intro button { flex: none; }
+  .pad { margin: 0; padding: 14px 20px; }
+  .empty { padding: 28px 20px; text-align: center; }
+  .entries { list-style: none; margin: 0; padding: 0; }
+  .entries li { padding: 11px 20px 12px; border-bottom: 1px solid var(--rule-soft); }
+  .entries li:hover { background: var(--sheet-hover); }
   .entries li.busy { opacity: 0.6; }
-  .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { font-size: 12px; margin-top: 2px; }
-  .soon { color: #a15c00; }
-  .buttons { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-  .buttons button { font-size: 12px; padding: 2px 8px; }
-  .del { color: #b00020; }
+  .name {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .name svg { flex: none; color: var(--ink-4); }
+  .name strong { font: 500 12.5px/1.3 var(--font-mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+  .from { font-family: var(--font-mono); font-size: 12px; }
+  .meta { font-size: 12px; margin-top: 3px; padding-left: 21px; }
+  .expiry { color: var(--ink-3); }
+  .soon { color: var(--amber); font-weight: 500; }
+  .buttons { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding-left: 21px; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  .del { color: var(--red); }
+  .del:hover:not(:disabled) { background: var(--red-tint); }
 </style>

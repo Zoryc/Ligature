@@ -5,7 +5,9 @@ A self-hostable, real-time collaborative LaTeX editor with user accounts.
 > Status: **M3 done** — accounts, projects with members and invite links, file tree with uploads and a trash can,
 > live co-editing, sandboxed compiles with auto-compile, errors in the editor gutter, SyncTeX (PDF ↔ source), zip
 > import/export, **project history** (versions, side-by-side diff, restore with undo), storage housekeeping, Docker
-> deployment ([docker/README.md](docker/README.md)). Early software: expect rough edges.
+> deployment ([docker/README.md](docker/README.md)). The interface uses the **Folio** design (paper, ink and one
+> teal accent; square corners) with a Contents outline, plain-language error explanations with one-click fixes, and
+> a Settings panel; the logo and brand files are in [docs/brand](docs/brand). Early software: expect rough edges.
 > See [docs/PLAN.md](docs/PLAN.md) for the architecture and roadmap, [docs/M1.md](docs/M1.md),
 > [docs/M2.md](docs/M2.md) and [docs/M3.md](docs/M3.md) for the API contract, and [docs/SYNC.md](docs/SYNC.md) for
 > the sync-model research.

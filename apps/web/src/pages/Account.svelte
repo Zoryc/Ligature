@@ -5,6 +5,7 @@
   import { toast } from '../lib/toasts.svelte.ts'
   import { displayNameProblem, passwordProblem } from '../lib/validation.ts'
   import NavBar from '../lib/NavBar.svelte'
+  import Avatar from '../lib/Avatar.svelte'
 
   let displayName = $state(session.me?.displayName ?? '')
   let nameBusy = $state(false)
@@ -54,33 +55,92 @@
 </script>
 
 <NavBar current="account" />
-<main class="page">
+<main class="page account">
   <h1>Account</h1>
   {#if session.me}
-    <p>Username: <strong>{session.me.username}</strong>{#if session.me.isAdmin} <span class="muted">(server administrator)</span>{/if}</p>
+    <div class="profile">
+      <Avatar id={session.me.id} name={session.me.displayName} size={40} />
+      <div class="who">
+        <span class="name">{session.me.displayName}</span>
+        <span class="muted">Username: <strong class="mono">{session.me.username}</strong></span>
+      </div>
+      {#if session.me.isAdmin}<span class="tag admin">Server administrator</span>{/if}
+    </div>
 
     <section class="card">
       <h2>Display name</h2>
+      <p class="sub">The name other project members see.</p>
       <form class="form" onsubmit={saveName}>
-        <div class="row">
-          <input bind:value={displayName} maxlength="64" aria-label="Display name" />
-          <button type="submit" class="primary" disabled={nameBusy || displayName.trim() === session.me.displayName}>Save</button>
+        <div class="field">
+          <span class="label">Display name</span>
+          <div class="control">
+            <div class="row">
+              <input class="grow" bind:value={displayName} maxlength="64" aria-label="Display name" />
+              <button type="submit" class="primary" disabled={nameBusy || displayName.trim() === session.me.displayName}>Save</button>
+            </div>
+            {#if nameError}<p class="error">{nameError}</p>{/if}
+          </div>
         </div>
-        {#if nameError}<p class="error">{nameError}</p>{/if}
       </form>
     </section>
 
     <section class="card">
       <h2>Change password</h2>
+      <p class="sub">At least 10 characters. Your other sessions will be logged out.</p>
       <form class="form" onsubmit={changePassword}>
-        <label>Current password <input bind:value={current} type="password" autocomplete="current-password" /></label>
-        <label>New password <input bind:value={next} type="password" autocomplete="new-password" />
-          <span class="hint">At least 10 characters. Your other sessions will be logged out.</span></label>
-        <label>Repeat new password <input bind:value={repeat} type="password" autocomplete="new-password" /></label>
-        {#if pwTouched && pwProblem}<p class="error">{pwProblem}</p>{/if}
-        <div class="row"><button type="submit" class="primary" disabled={pwBusy}>{pwBusy ? 'Saving…' : 'Change password'}</button></div>
-        {#if pwError}<p class="error" role="alert">{pwError}</p>{/if}
+        <label class="field"><span class="label">Current password</span>
+          <span class="control"><input bind:value={current} type="password" autocomplete="current-password" /></span></label>
+        <label class="field"><span class="label">New password</span>
+          <span class="control"><input bind:value={next} type="password" autocomplete="new-password" /></span></label>
+        <label class="field"><span class="label">Repeat new password</span>
+          <span class="control"><input bind:value={repeat} type="password" autocomplete="new-password" /></span></label>
+        <div class="field">
+          <span class="label"></span>
+          <div class="control">
+            {#if pwTouched && pwProblem}<p class="error">{pwProblem}</p>{/if}
+            <div class="row"><button type="submit" class="primary" disabled={pwBusy}>{pwBusy ? 'Saving…' : 'Change password'}</button></div>
+            {#if pwError}<p class="error" role="alert">{pwError}</p>{/if}
+          </div>
+        </div>
       </form>
     </section>
   {/if}
 </main>
+
+<style>
+  .account { max-width: 720px; }
+  .profile {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 8px;
+    padding: 14px 20px;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+  }
+  .who { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+  .who .name { font: 600 17px/1.2 var(--font-doc); color: var(--ink); }
+  .who strong { color: var(--ink-2); font-weight: 500; }
+  .tag.admin { border-color: var(--teal-edge); color: var(--teal); }
+  .card h2 { margin-bottom: 2px; }
+  .sub { margin: 0 0 14px; color: var(--ink-4); font-size: 12.5px; }
+  .card .form { gap: 0; border-top: 1px solid var(--rule-soft); }
+  .field {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .field:last-child { border-bottom: 0; padding-bottom: 0; }
+  .label { padding-top: 7px; font-weight: 600; color: var(--ink-2); }
+  .control { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+  .control input { width: 100%; }
+  .control .row input.grow { flex: 1; min-width: 0; width: auto; }
+  .control .error { margin: 0; }
+  @media (max-width: 560px) {
+    .field { grid-template-columns: 1fr; gap: 6px; }
+    .label { padding-top: 0; }
+  }
+</style>

@@ -41,6 +41,13 @@
   import { RestoreNotices, showRestoredToast, type RestoredEvent } from '../lib/restoreToast.ts'
   import RecoveryDialog from '../lib/RecoveryDialog.svelte'
   import { copyText, execCommandCopy, hasLocalChanges, recoveryOutcome } from '../lib/recovery.ts'
+  import Logo from '../lib/Logo.svelte'
+  import Avatar from '../lib/Avatar.svelte'
+  import { engineLabel } from '../lib/SettingsPanel.svelte'
+  import { prefs, setPref } from '../lib/prefs.svelte.ts'
+  import { explain, usepackageInsertion, type QuickFix } from '../lib/explain.ts'
+  import { buildOutline, entryMarks, resolveInput, type OutlineEntry } from '../lib/outline.ts'
+  import { agoText } from '../lib/trash.ts'
 
   interface Props { id: string; me: Me }
   let { id, me }: Props = $props()
@@ -114,6 +121,21 @@
   let autoState = $state.raw<AutoCompileState | null>(null)
   const auto = new AutoCompiler({ enabled: false, compile: t => doCompile(t), onState: s => { autoState = s } })
 
+  // Folio: account menu, cursor position, quick fixes, Contents outline
+  let accountOpen = $state(false)
+  let compileMenuOpen = $state(false)
+  let compileMenuEl = $state<HTMLElement | undefined>(undefined)
+  let logTab = $state<'problems' | 'log'>('problems')
+  let accountEl = $state<HTMLElement | undefined>(undefined)
+  let cursorPos = $state<{ line: number; column: number } | null>(null)
+  /** A package to add to the main file once it is open in the editor (quick fix). */
+  let pendingFix: QuickFix | null = null
+  /** Texts of the .tex files for the outline (the open file uses its live text). */
+  let outlineTexts = new Map<string, string>()
+  /** Bumped when outline inputs change (texts loaded, open file edited, diagnostics replaced). */
+  let outlineTick = $state(0)
+  let outlineLoading = $state(false)
+
   let rows = $derived(detail ? treeRows(detail.tree, detail.rootId) : [])
   let byPath = $derived(textFilesByPath(rows))
   let canEdit = $derived(detail ? can.edit(detail.role) : false)
@@ -131,15 +153,138 @@
   let panelTitle = $derived(
     panel === 'settings' ? 'Project settings' : panel === 'members' ? 'Members' : panel === 'history' ? 'History' : 'Trash')
   let reportShown = $derived(importReport && detail ? reportView(detail.name, importReport) : null)
+  let mainPath = $derived(detail?.mainFileId ? entryPath(detail.tree, detail.mainFileId) ?? '' : '')
+  let mainName = $derived(mainPath.split('/').pop() || 'the main file')
+  /** Breadcrumb of the open file: folders, then its name. */
+  let crumbs = $derived.by(() => {
+    const parts = openPath.split('/')
+    return { dirs: parts.slice(0, -1), name: parts.at(-1) ?? '' }
+  })
+  let others = $derived(peers.filter(p => p.id !== me.id))
+
+  let outline = $derived.by((): OutlineEntry[] => {
+    void outlineTick
+    const d = detail
+    if (!d?.mainFileId) return []
+    const dir = mainPath.includes('/') ? mainPath.slice(0, mainPath.lastIndexOf('/')) : ''
+    const live = file && fileReady ? file : null
+    return buildOutline({
+      mainFileId: d.mainFileId,
+      text: fid => (live && live.fileId === fid ? live.ytext.toString() : outlineTexts.get(fid) ?? null),
+      resolve: p => resolveInput(p, dir, byPath),
+    })
+  })
+  let outlineMarks = $derived.by(() => {
+    void outlineTick
+    const live = file && fileReady && anchors ? { id: file.fileId, lines: anchors.toLines(file.ytext.toString()) } : null
+    return entryMarks(outline, fid => ((live && live.id === fid ? live.lines : fileLines.get(fid)) ?? [])
+      .map(l => ({ line: l.line, severity: l.diag.severity })))
+  })
+  /** The outline entry the cursor is in (open file only). */
+  let currentEntry = $derived.by(() => {
+    const fid = file?.fileId
+    const line = cursorPos?.line
+    if (!fid || !line) return -1
+    let best = -1
+    outline.forEach((e, i) => { if (e.fileId === fid && e.line <= line) best = i })
+    return best
+  })
 
   // Auto-compile only for owners/editors, and only while the toggle is on.
   $effect(() => { auto.setEnabled(canCompile && autoOn) })
 
-  // The "Project ▾" menu closes on a click outside it and on Escape.
+  // The project and account menus close on a click outside them and on Escape.
   $effect(() => {
     if (!menuOpen) return
     return dismissMenu(window, t => !!menuEl && t instanceof Node && menuEl.contains(t), () => { menuOpen = false })
   })
+  $effect(() => {
+    if (!compileMenuOpen) return
+    return dismissMenu(window, t => !!compileMenuEl && t instanceof Node && compileMenuEl.contains(t), () => { compileMenuOpen = false })
+  })
+  $effect(() => {
+    if (!accountOpen) return
+    return dismissMenu(window, t => !!accountEl && t instanceof Node && accountEl.contains(t), () => { accountOpen = false })
+  })
+
+  // Contents: load the .tex files' texts when the tab is shown (and again after builds and tree changes).
+  $effect(() => {
+    if (prefs.sidebar === 'contents' && detail) untrackLoadOutline()
+  })
+  function untrackLoadOutline() {
+    queueMicrotask(() => void loadOutlineTexts())
+  }
+
+  let outlineRunning = false
+  let outlineQueued = false
+  async function loadOutlineTexts(): Promise<void> {
+    if (outlineRunning) {
+      outlineQueued = true
+      return
+    }
+    outlineRunning = true
+    outlineLoading = outlineTexts.size === 0
+    try {
+      do {
+        outlineQueued = false
+        const d = detail
+        if (!d || destroyed) return
+        const ids = d.tree.filter(e => e.kind === 'text' && /\.(tex|ltx)$/i.test(e.name)).map(e => e.id).slice(0, 300)
+        const next = new Map<string, string>()
+        for (let i = 0; i < ids.length; i += 8) {
+          await Promise.all(ids.slice(i, i + 8).map(async fid => {
+            try {
+              next.set(fid, await fetchText(rawFileUrl(id, fid)))
+            } catch {
+              // deleted meanwhile, or no access: leave it out
+            }
+          }))
+          if (destroyed) return
+        }
+        outlineTexts = next
+        outlineTick++
+      } while (outlineQueued)
+    } finally {
+      outlineRunning = false
+      outlineLoading = false
+    }
+  }
+
+  function openOutlineEntry(e: OutlineEntry) {
+    const entry = detail?.tree.find(t => t.id === e.fileId)
+    if (entry) openFile(entry, e.line, true)
+  }
+
+  // ---------- quick fixes ----------
+
+  function applyFix(fix: QuickFix) {
+    if (fix.kind !== 'usepackage' || !detail) return
+    const main = detail.tree.find(e => e.id === detail?.mainFileId && e.kind === 'text')
+    if (!main) {
+      toast('This project has no main file: choose one in Settings first.', 'error')
+      return
+    }
+    pendingFix = fix
+    if (file && fileReady && file.fileId === main.id) applyPendingFix()
+    else openFile(main)
+  }
+
+  function applyPendingFix() {
+    const fix = pendingFix
+    if (!fix || !editor || !file || file.fileId !== detail?.mainFileId) return
+    pendingFix = null
+    const text = editor.text() ?? ''
+    const at = usepackageInsertion(text, fix.pkg)
+    if (!at) {
+      toast(/\\begin\s*\{document\}/.test(text)
+        ? `${fix.pkg} is already loaded in ${mainName}.`
+        : `${mainName} has no \\begin{document}: add \\usepackage{${fix.pkg}} to the preamble yourself.`, 'error')
+      return
+    }
+    if (editor.insertText(at.at, at.insert)) {
+      toast(`Added \\usepackage{${fix.pkg}} to ${mainName}. Recompile to check (Ctrl+S).`)
+    }
+  }
 
   let collab: ProjectCollab | null = null
   let destroyed = false
@@ -211,6 +356,10 @@
     }
   }
 
+  function statusLabel(s: string): string {
+    return s === 'success' ? 'Compiled' : s === 'timeout' ? 'Compile timed out' : s === 'cancelled' ? 'Compile cancelled' : 'Compile failed'
+  }
+
   function setAuto(on: boolean) {
     autoOn = on
     saveAutoCompile(localStorageOrNull(), id, on)
@@ -225,6 +374,7 @@
     behindTimer = setTimeout(() => {
       behindTimer = null
       updateBehind()
+      outlineTick++
       // Bring the editor's markers in line with our anchors (CodeMirror maps them too; this keeps them equal,
       // including after the editor is re-created, e.g. on a role change).
       if (anchors && anchors.size && file) editorDiags = editorDiagnostics(anchors, file.ytext.length)
@@ -377,6 +527,7 @@
       editor.gotoLine(pendingJump.line, pendingJump.flash)
       pendingJump = null
     }
+    if (pendingFix) applyPendingFix()
   }
 
   function findByLogPath(path: string): TreeEntry | undefined {
@@ -435,6 +586,7 @@
   /** Show a new project state; deal with the open file/preview having been deleted, reset or re-roled. */
   function applyDetail(d: ProjectDetail) {
     const roleChanged = detail !== null && detail.role !== d.role
+    announceSettingChanges(detail, d)
     detail = d
     if (roleChanged && !can.compile(d.role)) autoOn = false
     if (preview && !d.tree.some(e => e.id === preview?.id && e.kind === 'binary')) {
@@ -453,6 +605,18 @@
     } else if (roleChanged) {
       // The server sets read-only per connection at authentication (and closed us): re-authenticate.
       file.reconnect()
+    }
+  }
+
+  /** A collaborator changed the compiler or the main file: say so (our own changes have their own toast). */
+  function announceSettingChanges(before: ProjectDetail | null, after: ProjectDetail) {
+    if (!before) return
+    const c = after.changes
+    if (before.engine !== after.engine && c.engine && c.engine.byUserId !== me.id) {
+      toast(`${c.engine.by || 'Someone'} changed the compiler to ${engineLabel(after.engine)}${c.engine.was ? ` (was ${engineLabel(c.engine.was)})` : ''}. It is used from the next build.`, 'info', 7000)
+    }
+    if (before.mainFileId !== after.mainFileId && after.mainFileId && c.mainFile && c.mainFile.byUserId !== me.id) {
+      toast(`${c.mainFile.by || 'Someone'} made ${entryPath(after.tree, after.mainFileId) ?? 'another file'} the main file.`, 'info', 7000)
     }
   }
 
@@ -636,6 +800,7 @@
   function togglePanel(p: 'settings' | 'members' | 'trash' | 'history') {
     panel = panel === p ? 'none' : p
     menuOpen = false
+    accountOpen = false
     diffReq = null
     if (panel === 'trash') void loadTrash()
   }
@@ -765,6 +930,7 @@
       anchors = log && log.fileId === file.fileId ? log.anchor(lines) : new FileDiagnostics(lines, file.ytext.toString())
       editorDiags = editorDiagnostics(anchors, file.ytext.length)
     }
+    outlineTick++
   }
 
   /** Show a build result (ours or a collaborator's) with its PDF, log, diagnostics and snapshot. */
@@ -783,6 +949,7 @@
       })
     }
     updateBehind()
+    if (prefs.sidebar === 'contents') void loadOutlineTexts()
   }
 
   /** A new PDF is shown: line numbers start from its build (the open file's text then: `log`, or now). */
@@ -921,6 +1088,23 @@
   }
 </script>
 
+{#snippet icon(name: string)}
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true">
+    {#if name === 'history'}<circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" />
+    {:else if name === 'members'}<circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.4c1.8.8 3 2.8 3 5.6" />
+    {:else if name === 'settings'}<path d="M12 2.5l2 2.6 3.2-.6.6 3.2 2.7 1.9-1.6 2.9 1 3.1-3.1 1-1 3.1-3.1-1L12 21.5l-1.7-2.8-3.1 1-1-3.1-3.1-1 1-3.1L2.5 9.6l2.7-1.9.6-3.2 3.2.6z" /><rect x="9" y="9" width="6" height="6" />
+    {:else if name === 'trash'}<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />
+    {:else if name === 'download'}<path d="M12 4v12M7 11l5 5 5-5M4 20h16" />
+    {:else if name === 'chevron'}<path d="M6 9l6 6 6-6" />
+    {:else if name === 'close'}<path d="M6 6l12 12M18 6L6 18" />
+    {:else if name === 'target'}<circle cx="12" cy="12" r="6" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+    {:else if name === 'recompile'}<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" />
+    {:else if name === 'log'}<path d="M5 4h14v16H5zM8 9h8M8 13h8M8 17h5" />
+    {:else if name === 'filter'}<path d="M4 6h16M7 12h10M10 18h4" />
+    {/if}
+  </svg>
+{/snippet}
+
 {#if loadError}
   <main class="message">
     <p class="error">{loadError}</p>
@@ -931,148 +1115,289 @@
 {:else}
   <div class="layout">
     <header class="topbar">
-      <a href="#/projects" title="All projects">&larr;</a>
-      <strong>{detail.name}</strong>
-      <span class="pill" title="Your role in this project">{detail.role}</span>
-      <span class="conn conn-{status}" title="Connection to the collaboration server">{status}</span>
-      <span class="peers">
-        {#each peers as p (p.id)}
-          <span class="peer" style="border-color: {p.color}" title={p.name}>
-            <span class="dot" style="background: {p.color}"></span>{p.name}{p.id === me.id ? ' (you)' : ''}
-          </span>
-        {/each}
-      </span>
-      <span class="spacer"></span>
-      {#if behind}<span class="behind" title="The open file has changed since the last compile">PDF is behind</span>{/if}
-      {#if autoState?.pausedUntil}
-        <span class="behind" title="Auto-compile waits until {new Date(autoState.pausedUntil).toLocaleTimeString()}">
-          Auto-compile paused: {autoState.pauseReason}
+      <div class="left">
+        <a class="brand" href="#/projects" aria-label="Ligature, all projects"><Logo /></a>
+        <a class="crumb" href="#/projects">All projects</a>
+        <span class="slash" aria-hidden="true">/</span>
+        <span class="menu" bind:this={menuEl}>
+          <h1>
+            <button type="button" class="project-name" aria-haspopup="menu" aria-expanded={menuOpen}
+              title="Project menu: download, trash, settings" onclick={() => { menuOpen = !menuOpen; accountOpen = false }}>
+              {detail.name}{@render icon('chevron')}
+            </button>
+          </h1>
+          {#if menuOpen}
+            <div class="menu-list" role="menu">
+              <a role="menuitem" href={exportZipUrl(id)} download onclick={() => { menuOpen = false }}>{@render icon('download')} Download .zip</a>
+              <button type="button" role="menuitem" onclick={() => togglePanel('trash')}>
+                {@render icon('trash')} Trash{trash?.length ? ` (${trash.length})` : ''}
+              </button>
+              <button type="button" role="menuitem" onclick={() => togglePanel('settings')}>{@render icon('settings')} Settings</button>
+            </div>
+          {/if}
         </span>
+        <span class="tag" title="Your role in this project"><span class="sr-only">Your role: </span>{detail.role}</span>
+      </div>
+      <span class="spacer"></span>
+      {#if others.length}
+        <ul class="peers" aria-label="Online now">
+          {#each others.slice(0, 4) as p (p.id)}
+            <li title="{p.name} is in this project now"><Avatar id={p.id} name={p.name} /><span class="peer-name">{p.name}</span></li>
+          {/each}
+          {#if others.length > 4}<li class="more" title={others.slice(4).map(p => p.name).join(', ')}>+{others.length - 4}</li>{/if}
+        </ul>
       {/if}
-      {#if canCompile}
-        <label class="auto" title="Compile 2.5 s after you stop typing (saved for this project in this browser)">
-          <input type="checkbox" checked={autoOn} onchange={e => setAuto(e.currentTarget.checked)} /> Auto-compile
-        </label>
-      {/if}
-      <button type="button" class="primary" onclick={recompile} disabled={!canCompile || compiling}
-        title={canCompile ? 'Compile (Ctrl+S)' : 'Viewers cannot compile'}>
-        {compiling ? 'Compiling…' : 'Recompile'}
-      </button>
-      <button type="button" class:active={panel === 'settings'} onclick={() => togglePanel('settings')}>Settings</button>
-      <button type="button" class:active={panel === 'members'} onclick={() => togglePanel('members')}>Members</button>
-      <button type="button" class:active={panel === 'history'} onclick={() => togglePanel('history')}>History</button>
-      <span class="menu" bind:this={menuEl}>
-        <button type="button" class:active={menuOpen} aria-haspopup="menu" aria-expanded={menuOpen}
-          onclick={() => { menuOpen = !menuOpen }}>Project ▾</button>
-        {#if menuOpen}
-          <div class="menu-list" role="menu">
-            <a role="menuitem" href={exportZipUrl(id)} download onclick={() => { menuOpen = false }}>Download .zip</a>
-            <button type="button" role="menuitem" onclick={() => togglePanel('trash')}>Trash{trash?.length ? ` (${trash.length})` : ''}</button>
+      <div class="seg" role="group" aria-label="Project panels">
+        <button type="button" class:on={panel === 'history'} aria-pressed={panel === 'history'} onclick={() => togglePanel('history')}>{@render icon('history')} History</button>
+        <button type="button" class:on={panel === 'members'} aria-pressed={panel === 'members'} onclick={() => togglePanel('members')}>{@render icon('members')} Members</button>
+        <button type="button" class:on={panel === 'settings'} aria-pressed={panel === 'settings'} title="Settings: compiler, main file, auto-compile, editor"
+          onclick={() => togglePanel('settings')}>{@render icon('settings')} Settings</button>
+      </div>
+      <span class="menu" bind:this={accountEl}>
+        <button type="button" class="account" aria-haspopup="menu" aria-expanded={accountOpen}
+          aria-label="{me.displayName} (you): account menu with Log out" onclick={() => { accountOpen = !accountOpen; menuOpen = false }}>
+          <Avatar id={me.id} name={me.displayName} size={26} />{@render icon('chevron')}
+        </button>
+        {#if accountOpen}
+          <div class="menu-list right" role="menu">
+            <div class="menu-head"><strong>{me.displayName}</strong><span class="muted">@{me.username}</span></div>
+            <a role="menuitem" href="#/projects">All projects</a>
+            <a role="menuitem" href="#/account">Account</a>
+            {#if me.isAdmin}<a role="menuitem" href="#/admin">Admin</a>{/if}
+            <button type="button" role="menuitem" onclick={logOutHere}>Log out</button>
           </div>
         {/if}
       </span>
-      <span class="muted">{me.displayName}</span>
-      <button type="button" onclick={logOutHere}>Log out</button>
     </header>
 
-    <aside class="files">
-      <FileTree projectId={id} tree={detail.tree} rootId={detail.rootId} mainFileId={detail.mainFileId} {canEdit}
-        openId={file?.fileId ?? preview?.id ?? null} onOpen={openEntry}
-        onChanged={() => { void refreshProject(); void loadTrash() }}
-        onSetMain={setMainFile} trashCount={trash?.length ?? null} trashOpen={panel === 'trash'}
-        onToggleTrash={() => togglePanel('trash')} {highlightId} />
-    </aside>
-
-    <section class="editor-pane">
-      {#if reportShown}
-        <div class="import-notice" role="status">
-          <div class="import-text">
-            {reportShown.summary}
-            {#if reportShown.skipped.length}
-              <ul>
-                {#each reportShown.skipped as s, i (i)}<li>{s}</li>{/each}
-                {#if reportShown.more}<li>… and {reportShown.more} more</li>{/if}
-              </ul>
-            {/if}
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Document">
+        <div class="side-tabs">
+          <div role="tablist" aria-label="Sidebar" class="tablist">
+            <button type="button" role="tab" aria-selected={prefs.sidebar === 'contents'} class:on={prefs.sidebar === 'contents'}
+              title="Contents: the sections of the document, across all files" onclick={() => setPref('sidebar', 'contents')}>Contents</button>
+            <button type="button" role="tab" aria-selected={prefs.sidebar === 'files'} class:on={prefs.sidebar === 'files'}
+              title="Files: create, upload, rename, move; the trash is at the bottom" onclick={() => setPref('sidebar', 'files')}>Files</button>
           </div>
-          <button type="button" title="Dismiss" onclick={() => { importReport = null }}>×</button>
         </div>
-      {/if}
-      <div class="pane-title">
-        <span class="path">{openPath || 'No file open'}{#if file && !canEdit}<span class="muted"> (read-only)</span>{/if}</span>
-        {#if preview}<a class="dl" href={rawFileUrl(id, preview.id)} download={preview.name}>Download</a>{/if}
-        <button type="button" class="sync" onclick={showInPdf} disabled={showInPdfProblem !== null}
-          title={showInPdfProblem ?? 'Show the cursor’s line in the PDF (Ctrl+Alt+J)'}>Show in PDF</button>
-      </div>
-      <div class="pane-body">
-        {#if fileError}
-          <div class="message">
-            <p class="error">{fileError}</p>
-            <button type="button" onclick={() => location.reload()}>Reload</button>
-          </div>
-        {:else if preview}
-          <div class="preview">
-            <img src="{rawFileUrl(id, preview.id, true)}&v={detail.treeVersion}" alt={preview.name} />
-          </div>
-        {:else if file && fileReady}
-          {#key file}
-            {#key canEdit}
-              <Editor bind:this={editor} ytext={file.ytext} awareness={file.awareness} undoManager={file.undoManager}
-                readOnly={!canEdit} diagnostics={editorDiags} />
-            {/key}
-          {/key}
-        {:else if file || recovering}
-          <div class="message muted">Loading file…</div>
-        {:else}
-          <div class="message">
-            {#if fileNotice}<p class="notice">{fileNotice}</p>{/if}
-            <p class="muted">Pick a file on the left.</p>
+        <div class="side-body">
+          {#if prefs.sidebar === 'contents'}
+            <nav class="contents" aria-label="Contents">
+              {#if !detail.mainFileId}
+                <p class="side-note">Choose a main file in Settings to see the contents.</p>
+              {:else if outlineLoading && outline.length === 0}
+                <p class="side-note">Reading the document…</p>
+              {:else if outline.length === 0}
+                <p class="side-note">No sections yet. Headings such as <code>\section&#123;…&#125;</code> appear here, from {mainName} and the files it includes.</p>
+              {:else}
+                <ol>
+                  {#each outline as e, i (`${e.fileId}:${e.line}:${i}`)}
+                    {@const mark = outlineMarks[i]}
+                    <li>
+                      <button type="button" class="entry depth-{Math.min(e.depth, 2)}" class:current={i === currentEntry}
+                        title="{e.title} ({entryPath(detail.tree, e.fileId) ?? ''}:{e.line})" onclick={() => openOutlineEntry(e)}>
+                        <span class="num">{e.number}</span>
+                        <span class="ttl" class:unnumbered={e.unnumbered}>{e.title}</span>
+                        {#if mark === 'error'}
+                          <svg class="mark" width="11" height="11" viewBox="0 0 12 12" aria-label="has errors"><rect width="12" height="12" fill="var(--red)" /><path d="M3.5 3.5l5 5M8.5 3.5l-5 5" stroke="#FFFFFF" stroke-width="1.6" /></svg>
+                        {:else if mark === 'warning'}
+                          <svg class="mark" width="11" height="11" viewBox="0 0 12 12" aria-label="has warnings"><path d="M6 1L11.5 11H0.5Z" fill="var(--amber-mark)" /><path d="M6 4.5v3.2M6 8.6v1" stroke="#FFFFFF" stroke-width="1.3" /></svg>
+                        {/if}
+                      </button>
+                    </li>
+                  {/each}
+                </ol>
+              {/if}
+            </nav>
+          {:else}
+            <FileTree projectId={id} tree={detail.tree} rootId={detail.rootId} mainFileId={detail.mainFileId} {canEdit}
+              openId={file?.fileId ?? preview?.id ?? null} onOpen={openEntry}
+              onChanged={() => { void refreshProject(); void loadTrash() }}
+              onSetMain={setMainFile} trashCount={trash?.length ?? null} trashOpen={panel === 'trash'}
+              onToggleTrash={() => togglePanel('trash')} {highlightId} />
+          {/if}
+        </div>
+      </aside>
+
+      <section class="editor-pane" aria-label="Source">
+        {#if reportShown}
+          <div class="import-notice" role="status">
+            <div class="import-text">
+              {reportShown.summary}
+              {#if reportShown.skipped.length}
+                <ul>
+                  {#each reportShown.skipped as s, i (i)}<li>{s}</li>{/each}
+                  {#if reportShown.more}<li>… and {reportShown.more} more</li>{/if}
+                </ul>
+              {/if}
+            </div>
+            <button type="button" class="quiet small" title="Dismiss" aria-label="Dismiss" onclick={() => { importReport = null }}>{@render icon('close')}</button>
           </div>
         {/if}
-      </div>
-    </section>
+        <div class="pane-head">
+          <span class="path" title={openPath}>
+            {#if openPath}
+              {#each crumbs.dirs as d, i (i)}<span class="dir">{d}</span><span class="sep">/</span>{/each}<span class="file">{crumbs.name}</span>
+              {#if file && !canEdit}<span class="tag ro">Read-only</span>{/if}
+            {:else}
+              <span class="muted">No file open</span>
+            {/if}
+          </span>
+          {#if preview}<a class="button small" href={rawFileUrl(id, preview.id)} download={preview.name}>{@render icon('download')} Download</a>{/if}
+          <button type="button" class="small" onclick={showInPdf} disabled={showInPdfProblem !== null}
+            aria-keyshortcuts="Control+Alt+J" title={showInPdfProblem ?? 'Show the cursor’s line in the PDF (Ctrl+Alt+J). Double-click the PDF to jump back.'}>
+            {@render icon('target')} Show in PDF
+          </button>
+        </div>
+        <div class="pane-body">
+          {#if fileError}
+            <div class="message">
+              <p class="error">{fileError}</p>
+              <button type="button" onclick={() => location.reload()}>Reload</button>
+            </div>
+          {:else if preview}
+            <div class="preview">
+              <img src="{rawFileUrl(id, preview.id, true)}&v={detail.treeVersion}" alt={preview.name} />
+            </div>
+          {:else if file && fileReady}
+            {#key file}
+              {#key canEdit}
+                <Editor bind:this={editor} ytext={file.ytext} awareness={file.awareness} undoManager={file.undoManager}
+                  readOnly={!canEdit} diagnostics={editorDiags} fontSize={prefs.fontSize} wrap={prefs.wrap}
+                  explain={d => explain(d, mainName)} onFix={applyFix}
+                  onCursor={(line, column) => { cursorPos = { line, column } }} />
+              {/key}
+            {/key}
+          {:else if file || recovering}
+            <div class="message muted">Loading file…</div>
+          {:else}
+            <div class="message">
+              {#if fileNotice}<p class="notice">{fileNotice}</p>{/if}
+              <p class="muted">Pick a file in Files, or a section in Contents.</p>
+            </div>
+          {/if}
+        </div>
+        <div class="problems" class:collapsed={prefs.problemsCollapsed}>
+          <LogPanel info={logInfo} onJump={jumpTo} onProblem={openProblem} bind:tab={logTab}
+            bind:collapsed={() => prefs.problemsCollapsed, v => setPref('problemsCollapsed', v)} />
+        </div>
+      </section>
 
-    <section class="output">
-      <div class="pdf-pane">
+      <section class="output" aria-label="PDF preview">
         <PdfView bind:this={pdfView} url={pdfUrl} onInverseSearch={inverseSearch}
           pageTitle={syncProblem ?? 'Double-click to open the source at that line'}
-          placeholder={canCompile ? 'No PDF yet. Click Recompile.' : 'No PDF yet. Wait for an editor to compile.'} />
-      </div>
-      <div class="log-pane">
-        <LogPanel info={logInfo} onJump={jumpTo} onProblem={openProblem} />
-      </div>
-    </section>
+          placeholder={canCompile ? 'No PDF yet. Press Recompile (Ctrl+S).' : 'No PDF yet. It appears when an editor compiles.'}>
+          {#snippet toolbar()}
+            <span class="split menu" bind:this={compileMenuEl}>
+              <button type="button" class="primary" onclick={recompile} disabled={!canCompile || compiling}
+                title={canCompile ? 'Compile (Ctrl+S)' : 'Viewers cannot compile'} aria-keyshortcuts="Control+S">
+                <span class:spin={compiling}>{@render icon('recompile')}</span>
+                {compiling ? 'Compiling…' : 'Recompile'}
+              </button>
+              <button type="button" class="primary caret" aria-label="Compile options: download PDF, raw log, settings"
+                aria-haspopup="menu" aria-expanded={compileMenuOpen} onclick={() => { compileMenuOpen = !compileMenuOpen }}>
+                {@render icon('chevron')}
+              </button>
+              {#if compileMenuOpen}
+                <div class="menu-list" role="menu">
+                  {#if pdfUrl}
+                    <a role="menuitem" href={pdfUrl} download="{detail?.name ?? 'output'}.pdf" onclick={() => { compileMenuOpen = false }}>{@render icon('download')} Download PDF</a>
+                  {/if}
+                  <button type="button" role="menuitem" disabled={!logInfo}
+                    onclick={() => { logTab = 'log'; setPref('problemsCollapsed', false); compileMenuOpen = false }}>{@render icon('log')} Raw log</button>
+                  <button type="button" role="menuitem" onclick={() => { compileMenuOpen = false; togglePanel('settings') }}>
+                    {@render icon('settings')} Compiler and auto-compile…
+                  </button>
+                </div>
+              {/if}
+            </span>
+          {/snippet}
+          {#snippet status()}
+            <div class="build-status" role="status">
+              {#if compiling}
+                <p class="first"><span class="dot busy"></span><strong>Compiling…</strong> <span class="muted">{engineLabel(detail?.engine ?? '')}</span></p>
+              {:else if logInfo}
+                {@const ok = logInfo.status === 'success'}
+                <p class="first">
+                  {#if ok}
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect width="12" height="12" fill="var(--green)" /><path d="M3 6.2l2 2 4-4.4" stroke="#FFFFFF" stroke-width="1.6" fill="none" /></svg>
+                  {:else}
+                    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect width="12" height="12" fill="var(--red)" /><path d="M3.5 3.5l5 5M8.5 3.5l-5 5" stroke="#FFFFFF" stroke-width="1.6" /></svg>
+                  {/if}
+                  <strong class:failed={!ok}>{statusLabel(logInfo.status)}</strong>
+                  {#if logInfo.durationMs !== null}<span class="sep">·</span><span>{(logInfo.durationMs / 1000).toFixed(1)} s</span>{/if}
+                  {#if logInfo.source}<span class="sep">·</span><span class="muted">{logInfo.source}</span>{/if}
+                </p>
+              {:else}
+                <p class="first muted">No build yet.</p>
+              {/if}
+              {#if behind || autoState?.pausedUntil}
+                <p class="second">
+                  {#if behind}<span class="behind">PDF is behind your edits</span>{/if}
+                  {#if autoState?.pausedUntil}
+                    <span class="behind" title="Auto-compile waits until {new Date(autoState.pausedUntil).toLocaleTimeString()}">
+                      Auto-compile paused: {autoState.pauseReason}
+                    </span>
+                  {/if}
+                </p>
+              {/if}
+            </div>
+          {/snippet}
+        </PdfView>
 
-    {#if panel === 'history' && diffReq}
-      <section class="diff-overlay" aria-label="Differences">
-        <FileDiff projectId={id} row={diffReq.row} left={diffReq.left} right={diffReq.right} leftTitle={diffReq.leftTitle}
-          rightTitle={diffReq.rightTitle} onClose={() => { diffReq = null }} />
+        {#if panel !== 'none'}
+          <aside class="side-panel" aria-label={panelTitle}>
+            <div class="side-head">
+              <span class="side-title">
+                {@render icon(panel === 'trash' ? 'trash' : panel)}
+                <span class="eyebrow">{panelTitle}</span>
+                {#if panel === 'settings'}<span class="muted sub">Changes save as you make them</span>{/if}
+              </span>
+              <button type="button" class="small close" aria-label="Close {panelTitle}" onclick={() => { panel = 'none'; diffReq = null }}>{@render icon('close')}</button>
+            </div>
+            <div class="side-scroll">
+              {#if panel === 'settings'}
+                <SettingsPanel {detail} {me} onUpdated={applyDetail} autoCompile={autoOn} onAutoCompile={setAuto} {compiling}
+                  onRecompile={recompile} onDeleted={() => { leaving = true; toast('Project deleted.'); go('/projects') }} />
+              {:else if panel === 'members'}
+                <MembersPanel bind:this={membersPanel} projectId={id} projectName={detail.name} {me} role={detail.role} />
+              {:else if panel === 'history'}
+                <HistoryPanel bind:this={historyPanel} projectId={id} tree={detail.tree} rootId={detail.rootId} {canEdit}
+                  onOpenDiff={d => { diffReq = d }} onRestore={restoreFromHistory} />
+              {:else}
+                <TrashPanel projectId={id} entries={trash} loadError={trashError} tree={detail.tree} {canEdit}
+                  isOwner={detail.role === 'owner'} {onRestored} onChanged={() => void loadTrash()} />
+              {/if}
+            </div>
+          </aside>
+        {/if}
       </section>
-    {/if}
+
+      {#if panel === 'history' && diffReq}
+        <section class="diff-overlay" aria-label="Differences">
+          <FileDiff projectId={id} row={diffReq.row} left={diffReq.left} right={diffReq.right} leftTitle={diffReq.leftTitle}
+            rightTitle={diffReq.rightTitle} onClose={() => { diffReq = null }} />
+        </section>
+      {/if}
+    </div>
+
+    <footer class="statusbar">
+      <span class="hint">
+        {#if !canEdit}You are a viewer: read-only.{:else}Ctrl+S compiles · Ctrl+Alt+J shows the cursor in the PDF{/if}
+      </span>
+      <span class="spacer"></span>
+      {#if cursorPos && file && fileReady}<span class="pos">Ln {cursorPos.line}, Col {cursorPos.column}</span>{/if}
+      <span class="conn conn-{status}" title="Connection to the collaboration server">
+        <span class="sq" aria-hidden="true"></span>{status === 'connected' ? 'Connected' : status === 'connecting' ? 'Connecting…' : 'Offline: edits are kept and sent on reconnect'}
+      </span>
+      <button type="button" class="engine" title="Compiler (change it in Settings)" onclick={() => togglePanel('settings')}>
+        {engineLabel(detail.engine)}{@render icon('chevron')}
+      </button>
+    </footer>
 
     {#if recovery}
       <RecoveryDialog path={recovery.path} localText={recovery.localText} serverText={recovery.serverText}
         error={recovery.error} onCopy={copyRecoveryText} onOpenCurrent={closeRecovery} />
-    {/if}
-
-    {#if panel !== 'none'}
-      <aside class="side-panel" class:wide={panel === 'history'} aria-label={panelTitle}>
-        <div class="side-head">
-          <strong>{panelTitle}</strong>
-          <button type="button" onclick={() => { panel = 'none'; diffReq = null }}>Close</button>
-        </div>
-        {#if panel === 'settings'}
-          <SettingsPanel {detail} onUpdated={applyDetail} />
-        {:else if panel === 'members'}
-          <MembersPanel bind:this={membersPanel} projectId={id} projectName={detail.name} {me} role={detail.role} />
-        {:else if panel === 'history'}
-          <HistoryPanel bind:this={historyPanel} projectId={id} tree={detail.tree} rootId={detail.rootId} {canEdit}
-            onOpenDiff={d => { diffReq = d }} onRestore={restoreFromHistory} />
-        {:else}
-          <TrashPanel projectId={id} entries={trash} loadError={trashError} tree={detail.tree} {canEdit}
-            isOwner={detail.role === 'owner'} {onRestored} onChanged={() => void loadTrash()} />
-        {/if}
-      </aside>
     {/if}
   </div>
 {/if}
@@ -1080,187 +1405,289 @@
 <style>
   .layout {
     height: 100vh;
-    display: grid;
-    grid-template-columns: 240px minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas:
-      'top top top'
-      'files editor output';
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper);
+    overflow: hidden;
   }
+
+  /* ---------- top bar ---------- */
   .topbar {
-    grid-area: top;
+    flex: none;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    border-bottom: 1px solid #ccc;
-    background: #f6f6f6;
     flex-wrap: wrap;
+    gap: 6px 16px;
+    min-height: 46px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
   }
-  .topbar a { text-decoration: none; font-size: 18px; }
-  .topbar button.active { background: #dde4ff; }
-  .spacer { flex: 1; }
-  .pill {
-    font-size: 12px;
-    padding: 1px 6px;
-    border-radius: 8px;
-    background: #e0e0e0;
-  }
-  .conn { font-size: 12px; }
-  .conn::before { content: '● '; }
-  .conn-connected { color: #1b7f3b; }
-  .conn-connecting { color: #a15c00; }
-  .conn-disconnected { color: #b00020; }
-  .peers { display: flex; gap: 6px; flex-wrap: wrap; }
-  .peer {
-    font-size: 12px;
-    border: 1px solid;
-    border-radius: 10px;
+  .left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand { position: relative; top: -3px; display: inline-flex; color: var(--ink); text-decoration: none; margin-right: 4px; }
+  .crumb { color: var(--ink-3); text-decoration: none; }
+  .crumb:hover { color: var(--ink); text-decoration: underline; }
+  .slash { color: var(--ink-4); }
+  h1 { display: inline-flex; margin: 0; font: inherit; }
+  .project-name {
+    height: 30px;
+    margin-left: -6px;
     padding: 0 6px;
+    border-color: transparent;
+    background: transparent;
+    font: 600 18px/1 var(--font-doc);
+    color: var(--ink);
+    gap: 6px;
   }
-  .dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 4px;
-  }
-  .behind {
-    font-size: 12px;
-    color: #a15c00;
-  }
-  .auto {
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    cursor: pointer;
-  }
-  .menu { position: relative; }
+  .project-name:hover:not(:disabled), .project-name[aria-expanded='true'] { background: var(--paper-2); border-color: var(--rule-strong); }
+  .spacer { flex: 1 1 0; }
+  .peers { display: flex; align-items: center; gap: 6px 16px; margin: 0; padding: 0; list-style: none; }
+  .peers li { display: flex; align-items: center; gap: 7px; font-size: 12.5px; white-space: nowrap; }
+  .peers .more { color: var(--ink-3); font-weight: 500; }
+  .seg { display: flex; height: 30px; border: 1px solid var(--rule-strong); background: var(--sheet); }
+  .seg button { min-height: 0; border: 0; background: transparent; color: var(--ink-2); }
+  .seg button + button { border-left: 1px solid var(--rule-strong); }
+  .seg button:hover:not(:disabled) { background: var(--paper-2); }
+  .seg button.on { background: var(--paper-2); box-shadow: inset 0 -2px 0 var(--teal); color: var(--ink); }
+  .account { border: 0; background: transparent; padding: 0 2px; gap: 5px; color: var(--ink-3); }
+  .account:hover:not(:disabled) { background: transparent; }
+
+  .menu { position: relative; display: inline-flex; }
   .menu-list {
     position: absolute;
-    right: 0;
+    left: 0;
     top: calc(100% + 4px);
     z-index: 60;
     display: flex;
     flex-direction: column;
-    min-width: 160px;
-    background: white;
-    border: 1px solid #bbb;
-    border-radius: 3px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    padding: 4px 0;
+    background: var(--sheet);
+    border: 1px solid var(--rule-strong);
+    box-shadow: var(--shadow);
   }
+  .menu-list.right { left: auto; right: 0; }
   .menu-list a, .menu-list button {
-    display: block;
-    padding: 6px 12px;
-    text-align: left;
+    display: flex;
+    justify-content: flex-start;
+    gap: 9px;
+    min-height: 32px;
+    padding: 0 14px;
     border: 0;
-    border-radius: 0;
     background: none;
-    font-size: 14px;
-    color: inherit;
+    font: 400 13px/1 var(--font-ui);
+    color: var(--ink);
     text-decoration: none;
+    align-items: center;
+    white-space: nowrap;
   }
-  .menu-list a:hover, .menu-list button:hover { background: #eef; }
-  .files {
-    grid-area: files;
-    overflow: auto;
-    border-right: 1px solid #ccc;
+  .menu-list a:hover, .menu-list button:hover:not(:disabled) { background: var(--paper-2); color: var(--ink); }
+  .menu-head { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px 10px; border-bottom: 1px solid var(--rule-soft); margin-bottom: 4px; }
+
+  /* ---------- workspace ---------- */
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
-  .editor-pane {
-    grid-area: editor;
+  .sidebar {
+    grid-column: 1;
+    grid-row: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-right: 1px solid #ccc;
+    border-right: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .side-tabs { flex: none; display: flex; height: 36px; border-bottom: 1px solid var(--rule); background: var(--paper-2); }
+  .tablist { display: flex; flex: 1; }
+  .tablist button {
+    flex: 1;
+    min-height: 0;
+    margin-bottom: -1px;
+    border: 0;
+    border-top: 2px solid transparent;
+    border-right: 1px solid var(--rule);
+    background: transparent;
+    font: 600 10.5px/1 var(--font-ui);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .tablist button:last-child { border-right: 0; }
+  .tablist button:hover:not(:disabled) { background: var(--paper); color: var(--ink); }
+  .tablist button.on { background: var(--paper); border-top-color: var(--teal); color: var(--ink); border-bottom: 1px solid var(--paper); }
+  .side-body { flex: 1; min-height: 0; overflow: auto; }
+  .contents { padding: 8px 0; font-family: var(--font-doc); }
+  .contents ol { list-style: none; margin: 0; padding: 0; }
+  .entry {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 100%;
+    min-height: 28px;
+    padding: 0 12px 0 14px;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: none;
+    font: 400 14px/1.2 var(--font-doc);
+    color: var(--ink);
+    gap: 0;
+    text-align: left;
+  }
+  .entry:hover:not(:disabled) { background: var(--paper-2); }
+  .entry.current { background: var(--teal-tint); border-left-color: var(--teal); }
+  .entry .num { flex: 0 0 28px; color: var(--ink-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .entry.depth-1 { padding-left: 30px; font-size: 13.5px; }
+  .entry.depth-1 .num { flex-basis: 30px; }
+  .entry.depth-2 { padding-left: 46px; font-size: 13px; color: var(--ink-2); }
+  .entry.depth-2 .num { flex-basis: 38px; }
+  .ttl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ttl.unnumbered { font-style: italic; }
+  .entry.depth-0 .ttl:not(.unnumbered) { font-weight: 600; }
+  .mark { flex: none; margin-left: 6px; }
+  .side-note { margin: 10px 16px; font: 400 12.5px/1.45 var(--font-ui); color: var(--ink-4); }
+
+  .editor-pane {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    background: var(--sheet);
   }
   .import-notice {
     display: flex;
     gap: 8px;
     align-items: flex-start;
-    padding: 6px 10px;
-    font-size: 13px;
-    background: #eef6ee;
-    border-bottom: 1px solid #b9d8b9;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    background: var(--green-tint);
+    border-bottom: 1px solid var(--rule);
     max-height: 30%;
     overflow: auto;
   }
   .import-text { flex: 1; }
   .import-text ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; }
-  .import-notice button { padding: 0 8px; }
-  .pane-title {
-    font-size: 12px;
-    padding: 4px 8px;
-    border-bottom: 1px solid #ddd;
-    background: #fafafa;
+  .pane-head {
+    flex: none;
     display: flex;
     gap: 8px;
     align-items: center;
+    height: 36px;
+    padding: 0 8px 0 14px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
   }
-  .pane-title .path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pane-title .sync { font-size: 12px; padding: 1px 8px; }
-  .pane-body {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-  }
+  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; }
+  .path .dir { color: var(--ink-3); }
+  .path .sep { color: var(--ink-4); margin: 0 3px; }
+  .path .file { font: 500 13px/1 var(--font-mono); color: var(--ink); }
+  .path .ro { margin-left: 10px; }
+  .pane-body { flex: 1; min-height: 0; overflow: auto; }
   .preview {
-    padding: 12px;
-    background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+    padding: 16px;
+    background: repeating-conic-gradient(var(--paper-2) 0 25%, var(--sheet) 0 50%) 0 0 / 16px 16px;
     min-height: 100%;
   }
-  .preview img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  .preview img { max-width: 100%; height: auto; display: block; margin: 0 auto; outline: 1px solid var(--rule); }
+  .problems {
+    flex: none;
+    height: 168px;
+    border-top: 1px solid var(--rule);
+  }
+  .problems.collapsed { height: 37px; }
+
   .output {
-    grid-area: output;
-    display: flex;
-    flex-direction: column;
+    grid-column: 3;
+    grid-row: 1;
+    position: relative;
     min-height: 0;
+    min-width: 0;
+    border-left: 1px solid var(--rule);
   }
-  .pdf-pane {
-    flex: 1;
-    min-height: 0;
-  }
-  .log-pane {
-    height: 30%;
-    min-height: 80px;
-    border-top: 1px solid #ccc;
-  }
+  .split { display: inline-flex; }
+  .split .caret { width: 28px; padding: 0; border-left: 1px solid var(--teal-edge); }
+  .split .menu-list { top: calc(100% + 4px); }
+  .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .build-status { flex: none; padding: 8px 14px 9px; border-bottom: 1px solid var(--rule); background: var(--paper); font-size: 12.5px; }
+  .build-status p { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .build-status .second { margin-top: 3px; }
+  .build-status strong { font-weight: 600; color: var(--green); }
+  .build-status strong.failed { color: var(--red); }
+  .build-status .sep { color: var(--ink-4); }
+  .behind { color: var(--amber); font-weight: 500; }
+  .behind + .behind::before { content: '·'; color: var(--ink-4); margin-right: 6px; }
+  .dot.busy { width: 10px; height: 10px; border: 2px solid var(--teal); border-right-color: transparent; animation: spin 0.8s linear infinite; }
+  .build-status .first strong { color: var(--ink); }
+  .build-status .first strong.failed { color: var(--red); }
+  .build-status .first svg + strong:not(.failed) { color: var(--green); }
+
   .side-panel {
     position: absolute;
-    top: 42px;
-    right: 0;
-    bottom: 0;
-    width: min(420px, 100vw);
-    background: white;
-    border-left: 1px solid #bbb;
-    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
-    padding: 10px 14px;
-    overflow: auto;
-    z-index: 50;
-  }
-  .side-panel.wide { width: min(440px, 100vw); }
-  .diff-overlay {
-    position: absolute;
-    top: 42px;
-    left: 0;
-    right: min(440px, 100vw);
-    bottom: 0;
-    z-index: 45;
-    border-right: 1px solid #bbb;
-    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
-    background: white;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    background: var(--sheet);
   }
   .side-head {
+    flex: none;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
+    justify-content: space-between;
+    gap: 10px;
+    height: 44px;
+    padding: 0 10px 0 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
   }
-  .message { padding: 16px; }
-  .notice { color: #a15c00; }
-  .primary:disabled {
-    background: #9db3e8;
-    border-color: #9db3e8;
+  .side-title { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--ink-3); }
+  .side-title .eyebrow { color: var(--ink); }
+  .side-title .sub { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .close { width: 28px; padding: 0; }
+  .side-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .diff-overlay {
+    grid-column: 1 / 3;
+    grid-row: 1;
+    z-index: 15;
+    min-height: 0;
+    border-right: 1px solid var(--rule-strong);
+    box-shadow: var(--shadow);
+    background: var(--sheet);
+  }
+
+  /* ---------- status bar ---------- */
+  .statusbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    height: 26px;
+    padding: 0 6px 0 14px;
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .statusbar .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pos { font-variant-numeric: tabular-nums; }
+  .conn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .sq { width: 7px; height: 7px; background: var(--green); }
+  .conn-connecting .sq { background: var(--amber-mark); }
+  .conn-disconnected { color: var(--red); }
+  .conn-disconnected .sq { background: var(--red); }
+  .engine { min-height: 22px; border: 0; background: transparent; padding: 0 8px; gap: 5px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+
+  .message { padding: 20px; }
+  .notice { color: var(--amber); }
+
+  @media (max-width: 1100px) {
+    .workspace { grid-template-columns: 210px minmax(0, 1fr) minmax(0, 1fr); }
+    .peer-name { display: none; }
   }
 </style>

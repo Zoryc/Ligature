@@ -285,42 +285,60 @@
 <div class="tree-pane" role="tree" tabindex="-1"
   class:drop-root={dropFolder === rootId}
   ondragover={e => dragOver(e, null)} ondragleave={dragLeave} ondrop={e => drop(e, null)}>
-  <div class="toolbar">
-    {#if canEdit}
-      <button type="button" title="New file in {currentFolderLabel}" onclick={() => newEntry('text')}>+ File</button>
-      <button type="button" title="New folder in {currentFolderLabel}" onclick={() => newEntry('folder')}>+ Folder</button>
-      <button type="button" title="Upload into {currentFolderLabel} (or drop files onto a folder)" onclick={pickFiles}>Upload</button>
+  {#if canEdit}
+    <div class="toolbar">
+      <button type="button" class="quiet small" title="New file in {currentFolderLabel}" onclick={() => newEntry('text')}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true"><path d="M13 3H6v18h12V8z" /><path d="M13 3v5h5M12 11v6M9 14h6" /></svg>
+        File
+      </button>
+      <button type="button" class="quiet small" title="New folder in {currentFolderLabel}" onclick={() => newEntry('folder')}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3z" /><path d="M12 11v6M9 14h6" /></svg>
+        Folder
+      </button>
+      <button type="button" class="quiet small" title="Upload into {currentFolderLabel} (or drop files onto a folder)" onclick={pickFiles}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
+        Upload
+      </button>
       <input bind:this={fileInput} type="file" multiple hidden onchange={onPicked} />
-    {/if}
-  </div>
+    </div>
+  {/if}
   {#if selected && selected.parentId !== null}
     <div class="toolbar selection">
       <span class="sel-name" title={entryPath(tree, selected.id) ?? ''}>{selected.name}</span>
-      {#if selected.kind !== 'folder'}<button type="button" onclick={() => download(selected!)}>Download</button>{/if}
+      {#if selected.kind !== 'folder'}<button type="button" class="small" onclick={() => download(selected!)}>Download</button>{/if}
       {#if canEdit}
         {#if selected.kind === 'text' && selected.name.toLowerCase().endsWith('.tex') && selected.id !== mainFileId}
-          <button type="button" onclick={() => onSetMain(selected!.id)}>Set as main</button>
+          <button type="button" class="small" onclick={() => onSetMain(selected!.id)}>Set as main</button>
         {/if}
-        <button type="button" onclick={() => rename(selected!)}>Rename</button>
-        <button type="button" onclick={() => move(selected!)}>Move</button>
-        <button type="button" class="del" title="Move to trash" onclick={() => remove(selected!)}>Delete</button>
+        <button type="button" class="small" onclick={() => rename(selected!)}>Rename</button>
+        <button type="button" class="small" onclick={() => move(selected!)}>Move</button>
+        <button type="button" class="small danger" title="Move to trash" onclick={() => remove(selected!)}>Delete</button>
       {/if}
     </div>
   {/if}
-  {#if canEdit}<div class="target muted">New files go to <strong>{currentFolderLabel}</strong></div>{/if}
+  {#if canEdit}<div class="target">New files go to <strong>{currentFolderLabel}</strong></div>{/if}
 
   <ul class="tree" bind:this={listEl}>
     {#each visible as r (r.entry.id)}
-      <li style="padding-left: {4 + r.depth * 14}px" class:drop={inDropFolder(r)}
+      <li class:drop={inDropFolder(r)}
         ondragover={e => dragOver(e, r.entry.id)} ondrop={e => drop(e, r.entry.id)}>
         <button type="button" class="row {r.entry.kind}" class:selected={r.entry.id === selectedId} class:open={r.entry.id === openId}
-          class:flash={r.entry.id === highlightId}
+          class:flash={r.entry.id === highlightId} style="padding-left: {10 + r.depth * 16}px"
           title={r.entry.kind === 'binary' ? `${r.path} (${formatBytes(r.entry.size ?? 0)})` : r.path}
           onclick={() => clickRow(r.entry)}>
           {#if r.entry.kind === 'folder'}
-            {collapsed.has(r.entry.id) ? '▸' : '▾'} {r.entry.name}/
+            <span class="twisty" aria-hidden="true">{collapsed.has(r.entry.id) ? '▸' : '▾'}</span>
+            <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3z" /></svg>
+            <span class="name">{r.entry.name}</span>
           {:else}
-            {r.entry.name}{#if r.entry.id === mainFileId}<span class="main" title="Main file"> (main)</span>{/if}
+            <span class="twisty" aria-hidden="true"></span>
+            {#if r.entry.kind === 'binary'}
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><rect x="4" y="4" width="16" height="16" /><path d="M4 16l5-5 4 4 3-3 4 4" /></svg>
+            {:else}
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><path d="M13 3H6v18h12V8z" /><path d="M13 3v5h5M9 13h6M9 17h6" /></svg>
+            {/if}
+            <span class="name">{r.entry.name}</span>
+            {#if r.entry.id === mainFileId}<span class="main" title="Main file: the compiler starts here">Main</span>{/if}
           {/if}
         </button>
       </li>
@@ -343,9 +361,10 @@
   {/if}
 
   <div class="trash-bar">
-    <button type="button" class="trash-btn" class:active={trashOpen} onclick={onToggleTrash}
+    <button type="button" class="trash-btn" class:active={trashOpen} aria-pressed={trashOpen} onclick={onToggleTrash}
       title="Deleted files and folders, which can be restored">
-      <span aria-hidden="true">🗑</span> {trashButtonLabel(trashCount ?? 0)}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" /></svg>
+      {trashButtonLabel(trashCount ?? 0)}
     </button>
   </div>
 </div>
@@ -357,76 +376,104 @@
     flex-direction: column;
     outline: none;
   }
-  .tree-pane.drop-root { background: #eef4ff; }
+  .tree-pane.drop-root { background: var(--teal-tint); }
   .toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 2px;
     padding: 6px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--rule-soft);
   }
-  .toolbar button { padding: 2px 6px; font-size: 12px; }
-  .toolbar.selection { background: #f7f7fb; align-items: center; }
+  .toolbar.selection {
+    gap: 4px;
+    padding: 8px 10px;
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--rule);
+    align-items: center;
+  }
   .sel-name {
     width: 100%;
-    font-size: 12px;
-    font-weight: 600;
+    font: 500 12px/1.3 var(--font-mono);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    margin-bottom: 2px;
   }
-  .del { color: #b00020; }
-  .target { font-size: 11px; padding: 2px 8px; }
+  .target { font-size: 11.5px; padding: 6px 12px 2px; color: var(--ink-4); }
+  .target strong { font-weight: 500; color: var(--ink-3); font-family: var(--font-mono); }
   .tree {
     list-style: none;
     margin: 0;
-    padding: 4px 0;
-    font-size: 13px;
+    padding: 4px 0 8px;
     flex: 1;
   }
-  li.drop { background: #dbe7ff; }
+  li.drop { background: var(--teal-tint); }
   .row {
-    display: block;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 6px;
     width: 100%;
+    min-height: 28px;
     text-align: left;
     border: 0;
+    border-left: 2px solid transparent;
     background: none;
-    padding: 3px 6px;
-    font: inherit;
+    padding: 0 10px;
+    font: 400 13px/1.2 var(--font-ui);
+    color: var(--ink);
     cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
-  .row:hover { background: #eef; }
-  .folder { font-weight: 600; }
-  .binary { color: #555; font-style: italic; }
-  .selected { outline: 1px dotted #2a5bd7; outline-offset: -1px; }
-  .open { background: #dde4ff; }
-  .main { color: #888; font-size: 11px; font-style: normal; }
-  .empty { padding: 8px; color: #666; }
+  .row:hover:not(:disabled) { background: var(--paper-2); }
+  .twisty { flex: 0 0 10px; color: var(--ink-4); font-size: 10px; text-align: center; }
+  .icon { color: var(--ink-3); }
+  .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder .name { font-weight: 500; }
+  .binary .name { color: var(--ink-2); }
+  .selected { box-shadow: inset 0 0 0 1px var(--rule-strong); }
+  .open { background: var(--teal-tint); border-left-color: var(--teal); }
+  .open:hover:not(:disabled) { background: var(--teal-tint); }
+  .open .icon { color: var(--teal); }
+  .main {
+    margin-left: auto;
+    padding: 2px 5px;
+    border: 1px solid var(--rule-strong);
+    color: var(--ink-3);
+    font: 600 9.5px/1 var(--font-ui);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .empty { padding: 10px 14px; color: var(--ink-4); }
   .uploads {
     list-style: none;
     margin: 0;
-    padding: 6px;
-    border-top: 1px solid #eee;
+    padding: 8px 10px;
+    border-top: 1px solid var(--rule-soft);
     font-size: 12px;
   }
-  .uploads li { display: flex; gap: 6px; align-items: center; }
-  .uploads .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .uploads li { display: flex; gap: 6px; align-items: center; min-height: 22px; }
+  .uploads .name { flex: 1; }
   .uploads progress { width: 80px; }
   .flash { animation: tree-flash 3s ease-out; }
   @keyframes tree-flash {
-    0%, 40% { background: #ffe58a; }
+    0%, 40% { background: #F3E3A6; }
     100% { background: transparent; }
   }
   .trash-bar {
     position: sticky;
     bottom: 0;
-    padding: 6px;
-    border-top: 1px solid #e4e4e4;
-    background: #fafafa;
+    border-top: 1px solid var(--rule);
+    background: var(--paper);
   }
-  .trash-btn { width: 100%; text-align: left; font-size: 13px; }
-  .trash-btn.active { background: #dde4ff; }
+  .trash-btn {
+    width: 100%;
+    justify-content: flex-start;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 0;
+    background: transparent;
+    font-weight: 400;
+    color: var(--ink-3);
+  }
+  .trash-btn.active { background: var(--paper-2); color: var(--ink); }
 </style>

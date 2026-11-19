@@ -94,7 +94,10 @@
     <span class="change change-{row.change}">{changeWord(row.file)}</span>
     {#if row.detail}<span class="muted">{row.detail}</span>{/if}
     <span class="spacer"></span>
-    <button type="button" onclick={onClose}>Close</button>
+    <button type="button" class="small" onclick={onClose}>
+      <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      Close
+    </button>
   </div>
   <div class="sides">
     <div class="side-title">{leftTitle}{#if left.type !== 'none' && left.path !== row.path}<span class="muted"> ({left.path})</span>{/if}</div>
@@ -131,47 +134,72 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: white;
+    background: var(--sheet);
+    font-size: 13px;
   }
   .head {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
-    padding: 6px 10px;
-    border-bottom: 1px solid #ddd;
-    background: #fafafa;
+    min-height: 36px;
+    padding: 4px 8px 4px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-2);
   }
-  .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 500 12.5px/1.3 var(--font-mono);
+    color: var(--ink);
+  }
+  .head .muted { font-size: 12px; white-space: nowrap; }
   .spacer { flex: 1; }
   .sides {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
     font-size: 12px;
     font-weight: 600;
+    color: var(--ink-3);
   }
-  .side-title { padding: 4px 10px; }
-  .side-title + .side-title { border-left: 1px solid #eee; }
-  .pad { padding: 4px 10px; margin: 0; }
+  .side-title { padding: 6px 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-title + .side-title { border-left: 1px solid var(--rule); }
+  .side-title .muted { font-weight: 400; font-family: var(--font-mono); }
+  .pad { padding: 8px 16px; margin: 0; }
   .merge { flex: 1; min-height: 0; overflow: auto; font-size: 13px; }
   .merge :global(.cm-mergeView) { min-height: 100%; }
   .merge :global(.cm-editor) { height: auto; }
   .binary {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    padding: 12px;
+    gap: 16px;
+    padding: 16px;
     overflow: auto;
   }
-  .bin-side { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .bin-side { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
   .thumb {
     max-width: 100%;
     max-height: 320px;
-    border: 1px solid #ddd;
-    background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+    border: 1px solid var(--rule);
+    background: repeating-conic-gradient(var(--paper-2) 0 25%, var(--sheet) 0 50%) 0 0 / 16px 16px;
   }
-  .change { font-size: 12px; padding: 0 6px; border-radius: 8px; background: #eee; }
-  .change-added { background: #e3f4e6; color: #1b7f3b; }
-  .change-removed { background: #fde7ea; color: #b00020; }
-  .change-modified, .change-renamed { background: #fff1d6; color: #8a5300; }
+  .change {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--rule-strong);
+    background: var(--paper);
+    color: var(--ink-3);
+    font: 600 10px/1 var(--font-ui);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .change-added { background: var(--green-tint); border-color: var(--green); color: var(--green); }
+  .change-removed { background: var(--red-tint); border-color: var(--red-rule); color: var(--red); }
+  .change-modified, .change-renamed { background: var(--amber-tint); border-color: var(--amber-rule); color: var(--amber); }
 </style>

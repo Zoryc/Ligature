@@ -50,34 +50,36 @@
   <div class="backdrop" role="presentation" onclick={e => { if (e.target === e.currentTarget) cancel() }}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
     <form onsubmit={submit}>
-      <h2 id="dialog-title">{d.title}</h2>
-      {#if d.message}<p class="message">{d.message}</p>{/if}
-      {#if d.input}
-        <label>
-          {d.input.label}
-          <input bind:this={field} bind:value type={d.input.type ?? 'text'} autocomplete="off" />
-        </label>
-        {#if problem && value !== (d.input.value ?? '')}<p class="problem">{problem}</p>{/if}
-      {/if}
-      {#if d.select}
-        <label>
-          {d.select.label}
-          <select bind:this={field} bind:value>
-            {#each d.select.options as o (o.value)}
-              <option value={o.value} disabled={o.disabled}>{o.label}</option>
-            {/each}
-          </select>
-        </label>
-      {/if}
-      {#if d.requireText !== undefined}
-        <label>
-          Type <strong>{d.requireText}</strong> to confirm
-          <input bind:value={typed} autocomplete="off" />
-        </label>
-      {/if}
+      <div class="body">
+        <h2 id="dialog-title">{d.title}</h2>
+        {#if d.message}<p class="message">{d.message}</p>{/if}
+        {#if d.input}
+          <label>
+            {d.input.label}
+            <input bind:this={field} bind:value type={d.input.type ?? 'text'} autocomplete="off" />
+          </label>
+          {#if problem && value !== (d.input.value ?? '')}<p class="problem">{problem}</p>{/if}
+        {/if}
+        {#if d.select}
+          <label>
+            {d.select.label}
+            <select bind:this={field} bind:value>
+              {#each d.select.options as o (o.value)}
+                <option value={o.value} disabled={o.disabled}>{o.label}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+        {#if d.requireText !== undefined}
+          <label>
+            <span>Type <strong class="require">{d.requireText}</strong> to confirm</span>
+            <input bind:value={typed} autocomplete="off" />
+          </label>
+        {/if}
+      </div>
       <div class="buttons">
         <button type="button" onclick={cancel}>Cancel</button>
-        <button bind:this={confirmBtn} type="submit" class={d.danger ? 'danger' : 'primary'} disabled={blocked}>
+        <button bind:this={confirmBtn} type="submit" class={d.danger ? 'danger solid' : 'primary'} disabled={blocked}>
           {d.confirmLabel ?? 'OK'}
         </button>
       </div>
@@ -90,7 +92,7 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
+    background: color-mix(in srgb, var(--ink) 28%, transparent);
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -98,16 +100,24 @@
     z-index: 200;
   }
   .dialog {
-    background: white;
-    border-radius: 4px;
-    padding: 16px 20px;
+    background: var(--sheet);
+    border: 1px solid var(--rule-strong);
     width: min(440px, 92vw);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow);
   }
-  h2 { margin: 0 0 8px; font-size: 16px; }
-  .message { white-space: pre-line; }
-  label { display: block; margin: 10px 0; }
-  input, select { display: block; width: 100%; margin-top: 4px; }
-  .problem { color: #b00020; margin: 4px 0; font-size: 13px; }
-  .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .body { padding: 20px 22px 18px; }
+  h2 { margin: 0 0 10px; font-size: 18px; line-height: 1.25; }
+  .message { margin: 0 0 4px; white-space: pre-line; color: var(--ink-2); line-height: 1.5; }
+  label { display: block; margin: 14px 0 0; font-weight: 500; color: var(--ink-2); }
+  input, select { display: block; width: 100%; margin-top: 5px; }
+  .require { font-family: var(--font-mono); font-weight: 600; color: var(--ink); }
+  .problem { color: var(--red); margin: 6px 0 0; font-size: 12.5px; }
+  .buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 22px;
+    background: var(--paper);
+    border-top: 1px solid var(--rule);
+  }
 </style>

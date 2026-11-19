@@ -10,6 +10,7 @@
   import { adminUserActions } from '../lib/adminActions.ts'
   import NavBar from '../lib/NavBar.svelte'
   import StorageSection from '../lib/StorageSection.svelte'
+  import Avatar from '../lib/Avatar.svelte'
 
   const MODES: { value: RegistrationMode; label: string }[] = [
     { value: 'invite-only', label: 'Invite only: people sign up with a project invite link' },
@@ -140,10 +141,17 @@
   {:else}
     <section class="card">
       <h2>Registration</h2>
+      <p class="sub">Who can create an account on this server.</p>
       <div class="form">
-        {#each MODES as m (m.value)}
-          <label class="radio"><input type="radio" name="registration" value={m.value} bind:group={registration} /> {m.label}</label>
-        {/each}
+        <div class="modes" role="radiogroup" aria-label="Registration">
+          {#each MODES as m (m.value)}
+            {@const cut = m.label.indexOf(': ')}
+            <label class="mode" class:on={registration === m.value}>
+              <input type="radio" name="registration" value={m.value} bind:group={registration} />
+              <span><strong>{m.label.slice(0, cut)}</strong><span class="desc">{m.label.slice(cut + 2)}</span></span>
+            </label>
+          {/each}
+        </div>
         {#if registration === 'open'}
           <p class="warning">Warning: with open registration, <strong>anyone who can reach this server</strong> can create an account
             and use the compiler. Only choose this on a private network or for a short time.</p>
@@ -156,47 +164,70 @@
 
     <section class="card">
       <h2>Users</h2>
-      <table class="list">
-        <thead><tr><th>Username</th><th>Display name</th><th>Status</th><th>Created</th><th></th></tr></thead>
-        <tbody>
-          {#each users as u (u.id)}
-            {@const actions = adminUserActions(u.id, session.me.id)}
-            <tr class:disabled={u.disabled}>
-              <td>{u.username}{#if u.id === session.me.id} <span class="muted">(you)</span>{/if}</td>
-              <td>{u.displayName}</td>
-              <td>{u.isAdmin ? 'admin' : 'user'}{u.disabled ? ', disabled' : ''}</td>
-              <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-              <td class="actions">
-                {#if actions.includes('rename')}<button type="button" onclick={() => rename(u)}>Rename…</button>{/if}
-                {#if actions.includes('reset-password')}
-                  <button type="button" onclick={() => resetPassword(u)}>Reset password…</button>
-                {:else}
-                  <a href="#/account" title="Resetting your own password here would log you out">Change password</a>
-                {/if}
-                {#if actions.includes('toggle-admin')}
-                  <button type="button" onclick={() => toggleAdmin(u)}>{u.isAdmin ? 'Remove admin' : 'Make admin'}</button>
-                {/if}
-                {#if actions.includes('toggle-disabled')}
-                  <button type="button" onclick={() => toggleDisabled(u)}>{u.disabled ? 'Enable' : 'Disable'}</button>
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table class="list users">
+          <thead><tr><th>Username</th><th>Display name</th><th>Status</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+            {#each users as u (u.id)}
+              {@const actions = adminUserActions(u.id, session.me.id)}
+              <tr class:disabled={u.disabled}>
+                <td>
+                  <span class="person">
+                    <Avatar id={u.id} name={u.displayName} size={20} />
+                    <span class="mono">{u.username}</span>{#if u.id === session.me.id}<span class="muted">(you)</span>{/if}
+                  </span>
+                </td>
+                <td>{u.displayName}</td>
+                <td class="status">
+                  <span class="tag" class:admin={u.isAdmin}>{u.isAdmin ? 'admin' : 'user'}</span>
+                  {#if u.disabled}<span class="tag off">disabled</span>{/if}
+                </td>
+                <td class="when">{new Date(u.createdAt).toLocaleDateString()}</td>
+                <td class="end">
+                  <span class="btns">
+                    {#if actions.includes('rename')}<button type="button" class="small" onclick={() => rename(u)}>Rename…</button>{/if}
+                    {#if actions.includes('reset-password')}
+                      <button type="button" class="small" onclick={() => resetPassword(u)}>Reset password…</button>
+                    {:else}
+                      <a href="#/account" title="Resetting your own password here would log you out">Change password</a>
+                    {/if}
+                    {#if actions.includes('toggle-admin')}
+                      <button type="button" class="small" onclick={() => toggleAdmin(u)}>{u.isAdmin ? 'Remove admin' : 'Make admin'}</button>
+                    {/if}
+                    {#if actions.includes('toggle-disabled')}
+                      <button type="button" class="small" class:danger={!u.disabled} onclick={() => toggleDisabled(u)}>{u.disabled ? 'Enable' : 'Disable'}</button>
+                    {/if}
+                  </span>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
       <h2>Create user</h2>
-      <form class="form" onsubmit={createUser}>
-        <label>Username <input bind:value={cUsername} autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
-        <label>Display name <input bind:value={cDisplay} autocomplete="off" /></label>
-        <label>Password <input bind:value={cPassword} type="password" autocomplete="new-password" />
-          <span class="hint">At least 10 characters. Tell the user through a safe channel.</span></label>
-        <label class="radio"><input type="checkbox" bind:checked={cAdmin} /> Administrator</label>
-        {#if cTouched && cProblem}<p class="error">{cProblem}</p>{/if}
-        <div class="row"><button type="submit" class="primary">Create user</button></div>
-        {#if cError}<p class="error" role="alert">{cError}</p>{/if}
+      <p class="sub">Passwords need at least 10 characters. Tell the user through a safe channel.</p>
+      <form class="form create" onsubmit={createUser}>
+        <label class="field"><span class="label">Username</span>
+          <span class="control"><input bind:value={cUsername} autocomplete="off" autocapitalize="none" spellcheck="false" /></span></label>
+        <label class="field"><span class="label">Display name</span>
+          <span class="control"><input bind:value={cDisplay} autocomplete="off" /></span></label>
+        <label class="field"><span class="label">Password</span>
+          <span class="control"><input bind:value={cPassword} type="password" autocomplete="new-password" /></span></label>
+        <div class="field">
+          <span class="label">Role</span>
+          <span class="control"><label class="check"><input type="checkbox" bind:checked={cAdmin} /> Administrator</label></span>
+        </div>
+        <div class="field">
+          <span class="label"></span>
+          <div class="control">
+            {#if cTouched && cProblem}<p class="error">{cProblem}</p>{/if}
+            <div class="row"><button type="submit" class="primary">Create user</button></div>
+            {#if cError}<p class="error" role="alert">{cError}</p>{/if}
+          </div>
+        </div>
       </form>
     </section>
 
@@ -205,6 +236,59 @@
 </main>
 
 <style>
-  .form label.radio { flex-direction: row; align-items: center; gap: 6px; }
-  tr.disabled td { color: #999; }
+  .card h2 { margin-bottom: 2px; }
+  .sub { margin: 0 0 14px; color: var(--ink-4); font-size: 12.5px; }
+
+  /* Registration */
+  .modes { display: flex; flex-direction: column; border: 1px solid var(--rule-soft); }
+  .form label.mode {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    font-weight: 400;
+    cursor: pointer;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .form label.mode:last-child { border-bottom: 0; }
+  .form label.mode:hover { background: var(--sheet-hover); }
+  .form label.mode.on { background: var(--teal-tint); }
+  .mode input { margin-top: 2px; }
+  .mode strong { display: block; font-weight: 600; color: var(--ink); }
+  .mode .desc { display: block; margin-top: 2px; color: var(--ink-3); }
+
+  /* Users */
+  .table-wrap { overflow-x: auto; }
+  .person { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .status { white-space: nowrap; }
+  .tag.admin { border-color: var(--teal-edge); color: var(--teal); }
+  .tag.off { border-color: var(--red-rule); color: var(--red); background: var(--red-tint); }
+  .when { color: var(--ink-4); white-space: nowrap; }
+  .users th:last-child, .end { width: 1%; text-align: right; }
+  .btns { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .btns a { padding: 0 8px; font-size: 12px; }
+  tr.disabled td { color: var(--ink-4); }
+  tr.disabled { background: var(--paper); }
+
+  /* Create user */
+  .form.create { gap: 0; border-top: 1px solid var(--rule-soft); }
+  .form .field {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    font-weight: 400;
+  }
+  .form .field:last-child { border-bottom: 0; padding-bottom: 0; }
+  .label { padding-top: 7px; font-weight: 600; color: var(--ink-2); }
+  .control { display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+  .control input:not([type='checkbox']) { width: 100%; }
+  .control .error { margin: 0; }
+  .form label.check { flex-direction: row; align-items: center; gap: 8px; min-height: 30px; font-weight: 400; color: var(--ink); }
+  @media (max-width: 560px) {
+    .form .field { grid-template-columns: 1fr; gap: 6px; }
+    .label { padding-top: 0; }
+  }
 </style>
