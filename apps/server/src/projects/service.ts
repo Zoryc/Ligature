@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { can, fileDocName, type Engine, type ProjectDetail, type Role, type UpdateProjectRequest } from '@ligature/shared'
+import {
+  can, fileDocName, type Engine, type ProjectDetail, type Role, type SettingKey, type UpdateProjectRequest,
+} from '@ligature/shared'
 import { audit } from '../audit.ts'
 import { badRequest, forbidden, notFound } from '../errors.ts'
 import { isUuid, type Services } from '../services.ts'
 import type { DB } from '../db/index.ts'
 import type { SessionUser } from '../auth/sessions.ts'
-import { getFile, getProject, projectDetail, roleOf } from './repo.ts'
+import { filePaths, getFile, getProject, liveFiles, projectDetail, roleOf } from './repo.ts'
 
 export const MAIN_TEMPLATE = String.raw`\documentclass{article}
 
@@ -88,12 +90,20 @@ export function updateProject(s: Services, a: Access, req: UpdateProjectRequest)
   if (req.name !== undefined && a.role !== 'owner') throw forbidden('Only the owner can rename the project')
   if (!can.edit(a.role)) throw forbidden()
   s.db.transaction(() => {
+    const before = getProject(s.db, a.projectId)
+    if (!before) throw notFound()
+    const changed = (key: SettingKey, from: string | null, to: string) => {
+      if (from !== to) audit(s.db, { actorId: a.userId, projectId: a.projectId, action: 'project.setting', detail: { key, from, to } })
+    }
     if (req.name !== undefined) {
-      s.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(validateProjectName(req.name), a.projectId)
+      const name = validateProjectName(req.name)
+      s.db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name, a.projectId)
+      changed('name', before.name, name)
     }
     if (req.engine !== undefined) {
       if (!ENGINE_VALUES.includes(req.engine)) throw badRequest('unknown engine')
       s.db.prepare('UPDATE projects SET engine = ? WHERE id = ?').run(req.engine, a.projectId)
+      changed('engine', before.engine, req.engine)
     }
     if (req.mainFileId !== undefined) {
       const f = isUuid(req.mainFileId) ? getFile(s.db, req.mainFileId) : null
@@ -101,6 +111,10 @@ export function updateProject(s: Services, a: Access, req: UpdateProjectRequest)
         throw badRequest('mainFileId must be a live .tex text file of this project')
       }
       s.db.prepare('UPDATE projects SET main_file_id = ? WHERE id = ?').run(f.id, a.projectId)
+      if (before.mainFileId !== f.id) {
+        const paths = filePaths(liveFiles(s.db, a.projectId))
+        changed('mainFile', before.mainFileId ? paths.get(before.mainFileId) ?? null : null, paths.get(f.id) ?? f.name)
+      }
     }
     touchProject(s.db, a.projectId, false)
   }).immediate()

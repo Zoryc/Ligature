@@ -158,4 +158,8 @@ export const MIGRATIONS: string[] = [
   -- forever", so the first scheduler pass takes an auto version of their current state.
   UPDATE projects SET dirty_since = 0 WHERE deleted_at IS NULL;
   `,
+
+  /* 5: Folio UI — "changed by" for shared project settings, read from the audit log */ `
+  CREATE INDEX audit_log_project_action ON audit_log(project_id, action, id);
+  `,
 ]

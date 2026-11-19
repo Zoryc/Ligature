@@ -12,6 +12,8 @@ export type AuditAction =
   | 'version.create' | 'version.label' | 'version.restore'
   // M3 (docs/M3.md §3–§5)
   | 'doc.rebuild' | 'gc.run' | 'project.purge' | 'storage.view'
+  // Folio UI: a shared project setting changed (detail: { key, from, to } as shown to people)
+  | 'project.setting'
 
 export interface AuditEntry {
   actorId: string | null

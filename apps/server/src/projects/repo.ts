@@ -1,5 +1,7 @@
 import type { DB } from '../db/index.ts'
-import type { Engine, FileKind, Member, ProjectDetail, ProjectSummary, Role, TreeEntry } from '@ligature/shared'
+import type {
+  Engine, FileKind, Member, ProjectDetail, ProjectSummary, Role, SettingChanges, SettingKey, TreeEntry,
+} from '@ligature/shared'
 
 export interface FileRow {
   id: string
@@ -76,8 +78,25 @@ export function projectDetail(db: DB, projectId: string, role: Role): ProjectDet
   const tree = liveFiles(db, projectId).map(toTreeEntry)
   return {
     id: p.id, name: p.name, role, rootId: p.rootId, mainFileId: p.mainFileId,
-    engine: p.engine, treeVersion: p.treeVersion, tree,
+    engine: p.engine, treeVersion: p.treeVersion, tree, changes: settingChanges(db, projectId),
   }
+}
+
+const SETTING_KEYS: readonly SettingKey[] = ['name', 'engine', 'mainFile']
+
+/** The latest change of each shared setting (audit action 'project.setting'). */
+export function settingChanges(db: DB, projectId: string): SettingChanges {
+  const out: SettingChanges = {}
+  for (const key of SETTING_KEYS) {
+    const r = db.prepare(`SELECT a.actor_id AS byUserId, COALESCE(u.display_name, '') AS by, a.at, a.detail_json AS d
+      FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+      WHERE a.project_id = ? AND a.action = 'project.setting' AND json_extract(a.detail_json, '$.key') = ?
+      ORDER BY a.id DESC LIMIT 1`).get(projectId, key) as { byUserId: string | null; by: string; at: number; d: string } | undefined
+    if (!r) continue
+    const from = (JSON.parse(r.d) as { from?: unknown }).from
+    out[key] = { byUserId: r.byUserId, by: r.by, at: r.at, was: typeof from === 'string' ? from : null }
+  }
+  return out
 }
 
 export function projectEngine(db: DB, projectId: string): { engine: string; mainFileId: string | null } | null {

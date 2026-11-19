@@ -61,6 +61,19 @@ describe('projects CRUD + soft delete', () => {
     expect((await owner.patch(`/api/projects/${p.id}`, { mainFileId: 'garbage' })).status).toBe(400)
     expect((await owner.patch(`/api/projects/${p.id}`, { mainFileId: other.id })).body.mainFileId).toBe(other.id)
 
+    // "Changed by …" for each shared setting: who, when, and the previous value as people see it
+    const changes = (await vi.get(`/api/projects/${p.id}`)).body.changes
+    expect(changes.engine).toEqual({ byUserId: expect.any(String), by: 'editor', at: expect.any(Number), was: 'pdflatex' })
+    expect(changes.name).toMatchObject({ by: 'Olive Owner', was: 'My Paper' })
+    expect(changes.mainFile).toMatchObject({ by: 'Olive Owner', was: 'main.tex' })
+    expect(changes.engine.byUserId).not.toBe(changes.name.byUserId)
+    // setting a value to what it already is records nothing
+    const before = auditEntries(ts.lig.db, 'project.setting').length
+    await owner.patch(`/api/projects/${p.id}`, { engine: 'lualatex', mainFileId: other.id })
+    expect(auditEntries(ts.lig.db, 'project.setting')).toHaveLength(before)
+    expect(before).toBe(3)
+    expect((await newProject(owner, 'Fresh')).changes).toEqual({})
+
     // delete: owner only; afterwards 404 for everyone, gone from lists
     expect((await ed.del(`/api/projects/${p.id}`)).status).toBe(403)
     expect((await out.del(`/api/projects/${p.id}`)).status).toBe(404)
@@ -72,7 +85,7 @@ describe('projects CRUD + soft delete', () => {
     expect((await owner.get(`/api/projects/${p.id}/members`)).status).toBe(404)
     expect((ts.lig.db.prepare('SELECT deleted_at AS d FROM projects WHERE id = ?').get(p.id) as { d: number }).d).toBeGreaterThan(0)
     expect(auditEntries(ts.lig.db, 'project-delete')).toHaveLength(1)
-    expect(auditEntries(ts.lig.db, 'project-create')).toHaveLength(2)
+    expect(auditEntries(ts.lig.db, 'project-create')).toHaveLength(3)
   })
 
   it('404 for malformed ids, unknown projects and non-members; 403 for members lacking the role', async () => {

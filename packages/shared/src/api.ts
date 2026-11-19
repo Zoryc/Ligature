@@ -84,7 +84,22 @@ export interface ProjectDetail {
   engine: Engine
   treeVersion: number
   tree: TreeEntry[]
+  /** Who last changed each shared setting, and when (absent: never changed since creation). */
+  changes: SettingChanges
 }
+
+/** A change to a shared project setting, shown as "Changed by Bob · 2 min ago · was XeLaTeX". */
+export interface SettingChange {
+  byUserId: string | null
+  /** Display name, '' when the account no longer exists. */
+  by: string
+  at: number
+  /** The previous value as shown to people (engine id, main file path, project name); null if unknown. */
+  was: string | null
+}
+
+export type SettingKey = 'name' | 'engine' | 'mainFile'
+export type SettingChanges = Partial<Record<SettingKey, SettingChange>>
 
 /** POST /api/projects */
 export interface CreateProjectRequest { name: string }

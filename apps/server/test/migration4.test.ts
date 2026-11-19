@@ -51,7 +51,7 @@ describe('migration 4 (versions) on an M2 database', () => {
     m2Db(dataDir)
     const ts = await startTestServer(39128, { dataDir }); servers.push(ts)
     const db = ts.lig.db
-    expect(db.pragma('user_version', { simple: true })).toBe(4)
+    expect(db.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(4) // and later migrations
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map(t => t.name)
     expect(tables).toEqual(expect.arrayContaining(['versions', 'version_files', 'version_authors', 'pending_authors']))
     const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as { name: string }[]).map(t => t.name)
