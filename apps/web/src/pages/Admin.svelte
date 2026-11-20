@@ -65,7 +65,13 @@
     }
   }
 
-  onMount(load)
+  /** The running Ligature version: shown to admins only (GET /api/admin/about). */
+  let version = $state<string | null>(null)
+
+  onMount(() => {
+    void load()
+    api.adminAbout().then(a => { version = a.version }, () => { version = null })
+  })
 
   async function saveSettings() {
     if (!registration || registration === savedRegistration) return
@@ -265,11 +271,15 @@
         </section>
       {/if}
     </div>
+    {#if version}
+      <p class="about">Ligature {version}</p>
+    {/if}
   {/if}
 </main>
 
 <style>
   main.wide { max-width: 1160px; }
+  .about { margin: 28px 0 0; font-size: 12px; color: var(--ink-4); font-variant-numeric: tabular-nums; }
 
   /* Tabs: the Folio tab strip (uppercase labels, a teal rule on the selected one). */
   .tabs { display: flex; margin: 0 0 4px; border-bottom: 1px solid var(--rule); }

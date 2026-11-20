@@ -1,0 +1,21 @@
+# Caddy for the local trial stack (docker/compose.local.yaml): the same directives as Caddyfile.example,
+# but plain HTTP on localhost:8080 (no public certificate for localhost, so no HSTS) and the app reached by
+# its compose service name instead of 127.0.0.1.
+http://localhost:8080 {
+	encode zstd gzip
+
+	request_body {
+		max_size 200MB
+	}
+	reverse_proxy app:3000 {
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
+
+	header {
+		?X-Content-Type-Options nosniff
+		?Referrer-Policy same-origin
+	}
+}

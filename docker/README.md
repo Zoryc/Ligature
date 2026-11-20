@@ -150,8 +150,11 @@ In the admin page, **Registration**:
 | Mode | Who can sign up |
 |---|---|
 | `invite-only` (default) | only with a project invite link (they join that project) |
-| `open` | anyone who can reach the site |
+| `open` | anyone who can reach the site (not recommended yet: see below) |
 | `closed` | nobody; admins create accounts in the admin page |
+
+Ligature is built for a team that trusts each other: until the stronger gVisor sandbox is available, keep
+sign-up on `invite-only` or `closed` rather than opening it to strangers ([SECURITY.md](../SECURITY.md)).
 
 No email is ever sent: share invite links yourself. Forgotten passwords are reset by an admin (admin page)
 or with `ligature reset-password` (below).

@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import { AUDIT_CATEGORIES, type AdminUser, type AuditCategory, type AuditPage, type GcReport, type InstanceSettings,
+import { AUDIT_CATEGORIES, type AdminAbout, type AdminUser, type AuditCategory, type AuditPage, type GcReport, type InstanceSettings,
   type RebuildDocResponse, type StorageReport } from '@ligature/shared'
 import { audit, auditPage } from '../../audit.ts'
 import { ApiError, badRequest, notFound } from '../../errors.ts'
@@ -11,6 +11,7 @@ import { countActiveAdmins, createUser, getUserById, listUsers, toAdminUser, wea
 import { displayNameSchema, passwordFieldSchema } from '../../auth/validation.ts'
 import { projectIdsOfUser } from '../../projects/repo.ts'
 import { isUuid } from '../../services.ts'
+import { VERSION } from '../../version.ts'
 import { readJson, type Env, type RouteDeps } from '../context.ts'
 
 const createSchema = z.strictObject({
@@ -54,6 +55,8 @@ function readQuery<S extends z.ZodType>(c: Context, schema: S): z.output<S> {
 export function adminRoutes(deps: RouteDeps): Hono<Env> {
   const { db } = deps
   const app = new Hono<Env>()
+
+  app.get('/admin/about', c => c.json({ version: VERSION } satisfies AdminAbout))
 
   app.get('/admin/users', c => c.json(listUsers(db).map(toAdminUser) satisfies AdminUser[]))
 

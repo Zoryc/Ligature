@@ -1,0 +1,15 @@
+# Local trial of the production stack (docker/compose.yaml) with Caddy in front, on http://localhost:8080.
+# Used by `npm run stack -- up` (scripts/local-stack.mjs), which sets LIGATURE_ORIGIN=http://localhost:8080 and
+# LIGATURE_PORT=3100 and uses the compose project name `ligature-local` (its own volumes). A real server runs
+# Caddy on the host instead (docker/README.md); plain HTTP here because localhost has no public certificate.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+    depends_on:
+      app:
+        condition: service_healthy

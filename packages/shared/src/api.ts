@@ -52,6 +52,12 @@ export interface AdminUser {
   disabled: boolean
   createdAt: number
 }
+/**
+ * Admin: GET /api/admin/about -> the running Ligature version (root package.json). Admin only on purpose:
+ * the version is not shown to other users or to anonymous visitors.
+ */
+export interface AdminAbout { version: string }
+
 /** Admin: POST /api/admin/users */
 export interface AdminCreateUserRequest { username: string; displayName: string; password: string; isAdmin?: boolean }
 /** Admin: PATCH /api/admin/users/:id */

@@ -1,15 +1,22 @@
 {
   "name": "ligature",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "license": "MIT",
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
-  "engines": { "node": ">=24" },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev:server": "npm run dev -w @ligature/server",
     "dev:web": "npm run dev -w @ligature/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "test:docker": "node scripts/docker-test.mjs",
+    "stack": "node scripts/local-stack.mjs"
   }
 }

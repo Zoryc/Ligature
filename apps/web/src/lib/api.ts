@@ -1,5 +1,5 @@
 import type {
-  AcceptInviteResponse, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, AuditCategory, AuditPage, BuildResult, CreatedInvite,
+  AcceptInviteResponse, AdminAbout, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, AuditCategory, AuditPage, BuildResult, CreatedInvite,
   CreateFileRequest, CreateInviteRequest, GcReport, ImportResponse, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me,
   Member, OutputName, ProjectDetail, ProjectSummary, RestoreRequest, RestoreResponse, SignupRequest,
   SynctexEditResponse, SynctexViewResponse, TrashEntry, TreeEntry, UpdateFileRequest, UpdateProjectRequest,
@@ -79,6 +79,7 @@ export const api = {
     request<{ ok: true }>('POST', '/api/me/password', { currentPassword, newPassword }),
 
   // admin
+  adminAbout: () => request<AdminAbout>('GET', '/api/admin/about'),
   adminUsers: () => request<AdminUser[]>('GET', '/api/admin/users'),
   adminCreateUser: (req: AdminCreateUserRequest) => request<AdminUser>('POST', '/api/admin/users', req),
   adminUpdateUser: (id: string, req: AdminUpdateUserRequest) => request<AdminUser>('PATCH', `/api/admin/users/${enc(id)}`, req),

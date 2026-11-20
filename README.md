@@ -2,7 +2,7 @@
 
 A self-hostable, real-time collaborative LaTeX editor with user accounts.
 
-> Status: **M4 done** — accounts, projects with members and invite links, file tree with uploads and a trash can,
+> Status: **1.0.0** ([changelog](CHANGELOG.md)) — accounts, projects with members and invite links, file tree with uploads and a trash can,
 > live co-editing, sandboxed compiles with auto-compile, errors in the editor gutter, SyncTeX (PDF ↔ source), zip
 > import/export, **project history** (versions, side-by-side diff, restore with undo), storage housekeeping, Docker
 > deployment ([docker/README.md](docker/README.md)) with a `/healthz` that checks the real paths, an admin audit log
@@ -68,9 +68,17 @@ The full guide for a fresh Ubuntu server (Docker, Caddy, admin account, backups,
 
 ## Tests
 
+Run them in Docker (Linux + TeX Live, the same as CI), on any OS with Docker running:
+
 ```sh
-npm test            # all packages
+npm run test:docker                 # typecheck, every test suite, web build
+npm run test:docker -- server       # one workspace (server, web, compiler, shared, latex-log-parser, synctex)
+npm run test:docker -- sandbox      # the uid sandbox and the malicious-TeX corpus, as root
+npm run stack -- up                 # the real stack (app, compiler, Caddy) at http://localhost:8080
+npm run stack -- stop               # stop it (images and data are kept)
 ```
+
+`npm test` also runs them directly on your machine, but skips what needs Linux or root.
 
 The real-TeX tests (compiler, log parser, SyncTeX, server compiles) run automatically when `latexmk` is on `PATH`.
 The sync property test (random edits, disconnects and `kill -9` of the real server) runs 25 cases by default;
@@ -94,4 +102,8 @@ outgoing connections (32768–60999), which can rarely cause `EADDRINUSE`. CI mo
 
 ## License
 
-MIT
+[MIT](LICENSE). Versions and what changed: [CHANGELOG.md](CHANGELOG.md). Security reports:
+[SECURITY.md](SECURITY.md).
+
+Third-party: the bundled fonts (IBM Plex Sans and Mono, Source Serif 4) are under the SIL Open Font License;
+the logo's lettering is traced from Source Serif 4 (see [docs/brand](docs/brand/README.md)).

@@ -1,0 +1,52 @@
+# Test image: the whole test suite on Linux with TeX Live, like CI's `test` and `sandbox` jobs
+# (.github/workflows/ci.yml), on any machine with Docker. Built and run by `npm run test:docker`
+# (scripts/docker-test.mjs); not used in production.
+#
+# Layers: TeX Live + Node + tools (rarely change) -> npm ci (when package-lock.json changes) -> the source
+# (every run). The host's node_modules are never copied (Windows/macOS binaries do not run on Linux).
+
+ARG TEXLIVE_IMAGE=texlive/texlive:latest-medium@sha256:3a3949a847929f989eb70a4c92ba43b38dcd4242e08a8a6a0b6f5ef3db1525ee
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+FROM ${NODE_IMAGE} AS node
+
+FROM ${TEXLIVE_IMAGE}
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && (command -v setpriv && command -v prlimit && command -v namei) >/dev/null \
+    || (apt-get update -q && apt-get install -y -q --no-install-recommends util-linux && rm -rf /var/lib/apt/lists/*) \
+ && node --version && npm --version && latexmk -v | sed -n 2p
+
+# As in CI and the compiler image: one system-wide LuaTeX font cache instead of one per test project.
+RUN TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force \
+ && chmod -R a+rX "$(kpsewhich -var-value=TEXMFSYSVAR)"
+
+# Unprivileged user for the normal suite (SANDBOX=none compiles refuse root, like in CI).
+RUN useradd --create-home --shell /bin/bash ci && mkdir -p /work && chown ci:ci /work
+WORKDIR /work
+
+# Dependencies first, so a source change does not reinstall them.
+COPY --chown=ci:ci package.json package-lock.json ./
+COPY --chown=ci:ci apps/server/package.json apps/server/package.json
+COPY --chown=ci:ci apps/web/package.json apps/web/package.json
+COPY --chown=ci:ci apps/compiler/package.json apps/compiler/package.json
+COPY --chown=ci:ci packages/shared/package.json packages/shared/package.json
+COPY --chown=ci:ci packages/latex-log-parser/package.json packages/latex-log-parser/package.json
+COPY --chown=ci:ci packages/synctex/package.json packages/synctex/package.json
+USER ci
+RUN npm ci --no-audit --no-fund
+USER root
+
+COPY --chown=ci:ci . .
+# A Windows working copy can hold CRLF files that git stores as LF (editors and tools write CRLF there); a
+# shell script with CRLF fails on Linux ("set: pipefail"). Strip them from the scripts, like a git checkout
+# on Linux would have. The per-project helper of the uid sandbox runs as uid >= 100000 and loads
+# apps/compiler/src.
+RUN find scripts -name '*.sh' -exec sed -i 's/\r$//' {} + \
+ && chmod -R o+rX /work
+
+# The runner picks the mode: `test` (as ci: typecheck, every suite, web build) or `sandbox` (as root:
+# the uid sandbox tests and the malicious-TeX corpus).
+CMD ["node", "scripts/docker-test-entry.mjs", "test"]

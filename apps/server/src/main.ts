@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { hasUsers } from './auth/settings.ts'
 import { setupLogLine } from './auth/setup.ts'
 import { originChecker, parseAllowedOrigins } from './http/origins.ts'
+import { VERSION } from './version.ts'
 import { startLigature } from './server.ts'
 
 const env = process.env
@@ -50,7 +51,7 @@ const app = startLigature({
 })
 
 app.listening.then(() => {
-  console.log(`[ligature] listening on http://${HOST}:${PORT}  data=${DATA_DIR}  compiler=${COMPILER_URL}`)
+  console.log(`[ligature] Ligature ${VERSION} listening on http://${HOST}:${PORT}  data=${DATA_DIR}  compiler=${COMPILER_URL}`)
   if (app.setupToken !== null && !hasUsers(app.db)) {
     console.log(setupLogLine([...ALLOWED_ORIGINS][0] ?? `http://localhost:${PORT}`, app.setupToken))
   }

@@ -1,0 +1,13 @@
+# Build context of docker/Dockerfile.test: the source only (no host node_modules or build output).
+**/node_modules
+**/dist
+**/.git
+.git
+.claude
+data
+builds
+**/*.db
+**/*.db-wal
+**/*.db-shm
+docker/.env
+coverage

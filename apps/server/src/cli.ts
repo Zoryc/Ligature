@@ -29,6 +29,7 @@ import { deleteUserSessions } from './auth/sessions.ts'
 import { hashPassword, isAcceptablePassword, PASSWORD_MAX, PASSWORD_MIN } from './auth/password.ts'
 import { normalizeDisplayName, normalizeUsername } from './auth/validation.ts'
 import { openDb, SchemaTooNewError } from './db/index.ts'
+import { VERSION } from './version.ts'
 import { missingBlobs, referencedBlobs, restore, RestoreError, type RestoreResult } from './maintenance/restore.ts'
 
 export class CliError extends Error {}
@@ -49,6 +50,7 @@ const USAGE = `Usage: ligature <command>
   reset-password <username>         set a new password (read from stdin) and log the user out everywhere
   create-admin <username> [--display-name <name>]
                                     create an instance admin (password read from stdin)
+  --version                         print the Ligature version
 
 Environment: DATA_DIR (default ./data) is the server's data directory.
 `
@@ -409,6 +411,9 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
         io.stdout.write(`admin ${r.username} created (id ${r.id})\n`)
         return 0
       }
+      case 'version': case '--version': case '-v':
+        io.stdout.write(`ligature ${VERSION}\n`)
+        return 0
       case undefined: case 'help': case '--help': case '-h':
         io.stdout.write(USAGE)
         return cmd === undefined ? 2 : 0
