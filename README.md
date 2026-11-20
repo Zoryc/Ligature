@@ -30,6 +30,42 @@ in development they all have the password `ligature-dev-password`.
 To be two users at once in one browser, use a second tab at http://bob.localhost:5173 —
 each `*.localhost` host has its own login cookie.
 
+## Deploy
+
+Two containers behind a TLS reverse proxy, run with Docker Compose:
+
+```
+browser ──HTTPS + WebSocket──> Caddy (TLS, :443)
+                                 │  127.0.0.1:3000
+                                 v
+                      ┌─ app container :3000 ──────────────┐      volume data:
+                      │ HTTP API + web client + /collab WS │ ───> app.db, blobs/,
+                      │ (and the `ligature` CLI)           │      outputs/, backups/
+                      └────────────────┬───────────────────┘
+                                       │ unix socket (volume run)
+                                       v
+                      ┌─ compiler container ───────────────┐      volume builds:
+                      │ TeX Live + compile worker          │ ───> build dirs, caches
+                      │ no network at all                  │
+                      └────────────────────────────────────┘
+```
+
+- **app** image: Node, the server, the built web client and the `ligature` CLI (backup, restore, password
+  reset, create admin); nothing else.
+- **compiler** image: TeX Live (full scheme by default, medium for small servers) and the compile worker.
+
+You build both images yourself on the server from this repository; there is no registry to pull from.
+
+```sh
+sudo git clone https://github.com/Zoryc/Ligature /opt/ligature && sudo chown -R "$USER": /opt/ligature && cd /opt/ligature
+cp docker/.env.example docker/.env                    # set LIGATURE_ORIGIN=https://your.domain
+docker compose -f docker/compose.yaml up -d --build   # first build: 10 to 15 minutes
+docker compose -f docker/compose.yaml exec app ligature create-admin alice
+```
+
+The full guide for a fresh Ubuntu server (Docker, Caddy, admin account, backups, restore, upgrades):
+[docker/README.md](docker/README.md).
+
 ## Tests
 
 ```sh

@@ -2,7 +2,16 @@
 #   LIGATURE_ORIGIN=https://latex.example.org docker compose -f docker/compose.yaml up -d --build
 # Put Caddy (or another TLS proxy with WebSocket support) in front of 127.0.0.1:3000.
 # There is deliberately no docker.sock, Redis or database container anywhere.
+# The images are built on the host from this checkout (`--build`); there is no registry to pull them from.
 name: ligature
+
+# Container logs are rotated: at most 5 files of 10 MB per container (`local` is Docker's compact,
+# compressed format; `docker compose logs` reads it). Without this the default json-file driver grows forever.
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: "5"
 
 services:
   app:
@@ -11,6 +20,7 @@ services:
       dockerfile: docker/Dockerfile.app
     image: ligature-app:latest
     restart: unless-stopped
+    logging: *logging
     environment:
       NODE_ENV: production
       DATA_DIR: /data
@@ -18,12 +28,15 @@ services:
       ALLOWED_ORIGINS: ${LIGATURE_ORIGIN:?set LIGATURE_ORIGIN to the public URL, e.g. https://latex.example.org}
       # 1 = rate limits use the first X-Forwarded-For hop. Only behind a proxy that overwrites that header
       # (Caddy does for untrusted clients); the app port is bound to 127.0.0.1 so nothing else can set it.
+      # docker/.env.example sets it to 1; the default here stays 0 for a stack run without a proxy.
       TRUST_PROXY: ${LIGATURE_TRUST_PROXY:-0}
       # Deleted files stay in the project's trash can this many days, then are purged automatically.
       TRASH_RETENTION_DAYS: ${LIGATURE_TRASH_RETENTION_DAYS:-30}
       # The SPA (apps/web/dist) is served by the app itself: WEB_DIST_DIR is set in the image.
     ports:
-      - "127.0.0.1:${LIGATURE_PORT:-3000}:3000"   # only the local reverse proxy talks to the app
+      # Only the local reverse proxy talks to the app. Never publish it on 0.0.0.0: Docker's port
+      # forwarding bypasses ufw, so the plain-HTTP port would be open to the internet.
+      - "127.0.0.1:${LIGATURE_PORT:-3000}:3000"
     volumes:
       - data:/data                   # app.db, blobs, build outputs, backups/: never mounted in the compiler
       - run:/run/ligature            # the compiler's unix socket
@@ -45,8 +58,12 @@ services:
       args:
         # medium scheme for a small VPS: see the comment at the top of Dockerfile.compiler
         TEXLIVE_IMAGE: ${LIGATURE_TEXLIVE_IMAGE:-texlive/texlive:latest-full@sha256:c21636aa13e86716d15dab4e352356cb0d34f9365d6091db066e5df71041d67b}
+        # Extra CTAN packages installed with tlmgr at build time (space-separated), e.g. for the medium
+        # scheme. The container itself is offline, so packages can only be added here, then rebuilt.
+        TEXLIVE_EXTRA_PACKAGES: ${LIGATURE_TEXLIVE_EXTRA:-}
     image: ligature-compiler:tl2026
     restart: unless-stopped
+    logging: *logging
     # No `init: true` needed: the image's entrypoint is tini, which reaps orphaned TeX processes.
     environment:
       NODE_ENV: production

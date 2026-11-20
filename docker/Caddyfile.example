@@ -1,8 +1,9 @@
 # Caddy in front of Ligature (PLAN section 3). Caddy gets and renews the TLS certificate itself.
 #   sudo cp docker/Caddyfile.example /etc/caddy/Caddyfile   # then replace the host name
 #   sudo systemctl reload caddy
-# The app listens on 127.0.0.1:3000 only (docker/compose.yaml). reverse_proxy passes WebSocket
-# upgrades (/collab) through unchanged. LIGATURE_ORIGIN must be exactly https://<this host>.
+# The app is published on 127.0.0.1:${LIGATURE_PORT:-3000} only (docker/compose.yaml): the port in
+# reverse_proxy below must match LIGATURE_PORT in docker/.env. reverse_proxy passes WebSocket upgrades
+# (/collab) through unchanged. LIGATURE_ORIGIN must be exactly https://<this host>.
 # The app serves the web client (apps/web/dist) itself, so everything goes to the one upstream.
 # Caddy overwrites X-Forwarded-For from untrusted clients, so LIGATURE_TRUST_PROXY=1 is safe with it.
 
@@ -20,9 +21,11 @@ latex.example.org {
 		}
 	}
 
+	# The app already sends X-Content-Type-Options and Referrer-Policy on its responses: `?` sets them
+	# only where it did not, so they are never duplicated. HSTS is Caddy's job (it knows TLS is on).
 	header {
 		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options nosniff
-		Referrer-Policy same-origin
+		?X-Content-Type-Options nosniff
+		?Referrer-Policy same-origin
 	}
 }
