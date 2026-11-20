@@ -15,7 +15,7 @@ describe('instance + signup modes', () => {
   it('first account becomes admin in any mode; then invite-only (default) requires an invite', async () => {
     const s = await server(39140)
     const anon = new Client(s.base)
-    expect((await anon.get('/api/instance')).body).toEqual({ registration: 'invite-only', hasUsers: false, devLogin: true })
+    expect((await anon.get('/api/instance')).body).toEqual({ registration: 'invite-only', hasUsers: false, devLogin: true, setupRequired: false })
 
     const first = new Client(s.base)
     const r = await first.post('/api/auth/signup', { username: 'Root.User', displayName: '  Root  ', password: PASSWORD })

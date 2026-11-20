@@ -1,11 +1,16 @@
 /**
- * Operator CLI (docs/M1.md §7b). Runs against DATA_DIR directly; the server may be running.
+ * Operator CLI (docs/M1.md §7b). Runs against DATA_DIR directly; the server may be running, except for
+ * `restore`, which needs it stopped:
  *
  *   npm run cli -w @ligature/server -- <command>        (development)
  *   docker compose exec app ligature <command>           (Docker: /usr/local/bin/ligature wraps this file)
+ *   docker compose run --rm --no-deps -v <dir>:/restore:ro app ligature restore /restore   (app stopped)
  *
  * Commands:
  *   backup <dir>                 online SQLite backup of app.db + copy of blobs/ into <dir>/ligature-backup-<timestamp>/
+ *   restore <backup-dir> [--force]
+ *                                replace DATA_DIR's data by a backup (maintenance/restore.ts); the old data is kept
+ *                                in DATA_DIR/pre-restore-<timestamp>/
  *   reset-password <username>    new password from stdin; deletes all of the user's sessions
  *   create-admin <username> [--display-name <name>]
  *                                new instance admin, password from stdin (for closed instances and recovery)
@@ -15,15 +20,16 @@
  */
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
-import { chmod, cp, lstat, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
-import { existsSync, realpathSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { chmod, copyFile, cp, lstat, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { constants, existsSync, realpathSync } from 'node:fs'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { audit } from './audit.ts'
 import { deleteUserSessions } from './auth/sessions.ts'
 import { hashPassword, isAcceptablePassword, PASSWORD_MAX, PASSWORD_MIN } from './auth/password.ts'
 import { normalizeDisplayName, normalizeUsername } from './auth/validation.ts'
-import { openDb } from './db/index.ts'
+import { openDb, SchemaTooNewError } from './db/index.ts'
+import { missingBlobs, referencedBlobs, restore, RestoreError, type RestoreResult } from './maintenance/restore.ts'
 
 export class CliError extends Error {}
 
@@ -38,6 +44,8 @@ export interface CliIo {
 const USAGE = `Usage: ligature <command>
 
   backup <dir>                      back up app.db (online) and blobs/ into a new directory under <dir>
+  restore <backup-dir> [--force]    replace all data by a backup made with \`backup\` (stop the app server first);
+                                    the replaced data is kept in DATA_DIR/pre-restore-<timestamp>/
   reset-password <username>         set a new password (read from stdin) and log the user out everywhere
   create-admin <username> [--display-name <name>]
                                     create an instance admin (password read from stdin)
@@ -46,6 +54,37 @@ Environment: DATA_DIR (default ./data) is the server's data directory.
 `
 
 export const dataDirOf = (env: NodeJS.ProcessEnv) => resolve(env.DATA_DIR ?? 'data')
+
+/**
+ * openDb's schema line for the account commands: only a migration is worth a line (stderr is otherwise empty
+ * on success), and never on stdout, which carries only results.
+ */
+const toStderr = (line: string) => { if (!line.startsWith('[db] schema ')) process.stderr.write(`${line}\n`) }
+
+const isInside = (child: string, parent: string) => {
+  const r = relative(parent, child)
+  return r === '' || (!r.startsWith('..') && !isAbsolute(r))
+}
+
+/**
+ * A directory argument. Relative paths are refused: inside the container they resolve against the image's
+ * working directory, so the backup would land (or be looked for) somewhere the operator did not mean.
+ */
+export function absoluteDir(raw: string, what: string, example: string): string {
+  if (!isAbsolute(raw)) {
+    throw new CliError(`the ${what} must be an absolute path inside the container, e.g. ${example} (got ${JSON.stringify(raw)})`)
+  }
+  return resolve(raw)
+}
+
+/** Where `backup` may write: an absolute path, not inside the server's blobs/ or outputs/. */
+export function backupTarget(dataDir: string, raw: string): string {
+  const target = absoluteDir(raw, 'backup directory', '/data/backups')
+  for (const sub of ['blobs', 'outputs']) {
+    if (isInside(target, join(dataDir, sub))) throw new CliError(`the backup directory must not be inside ${join(dataDir, sub)}; use e.g. /data/backups`)
+  }
+  return target
+}
 
 /* ------------------------------------------------------------------ backup */
 
@@ -84,9 +123,39 @@ function existingDbFile(dataDir: string): string {
 export const BACKUP_PAGES_PER_STEP = 0x7fffffff
 
 /**
+ * After the copy, every blob the snapshot refers to must be in the backup (restore refuses it otherwise).
+ * The running server's garbage collection can delete one while the copy runs: a project purged or a
+ * version thinned after the snapshot frees blobs the snapshot still refers to. Those are copied again from
+ * the live blobs/; one already deleted there fails the backup (run it again: a new snapshot no longer
+ * refers to it).
+ */
+export async function completeBlobs(dir: string, liveBlobs: string): Promise<void> {
+  const db = new Database(join(dir, 'app.db'), { readonly: true, fileMustExist: true })
+  let needed: Set<string>
+  try { needed = referencedBlobs(db) } finally { db.close() }
+  const blobs = join(dir, 'blobs')
+  const gone: string[] = []
+  for (const h of missingBlobs(blobs, needed)) {
+    const [shard, rest] = [h.slice(0, 2), h.slice(2)]
+    try {
+      await mkdir(join(blobs, shard), { recursive: true })
+      await copyFile(join(liveBlobs, shard, rest), join(blobs, shard, rest), constants.COPYFILE_EXCL)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+      gone.push(h)
+    }
+  }
+  if (gone.length) {
+    throw new CliError(`${gone.length} blob(s) the database snapshot refers to were deleted while the backup ran (by the `
+      + `server's garbage collection), e.g. ${gone[0]}. Nothing usable was written; run the backup again.`)
+  }
+}
+
+/**
  * Online backup: `db.backup()` takes a consistent snapshot while the server keeps writing. Blobs are
  * copied AFTER the snapshot: the server writes a blob file before committing the row that references
- * it, and blobs are never deleted in M1, so every blob the snapshot references is on disk by then.
+ * it, so every blob the snapshot references is on disk by then, unless the garbage collection deletes it
+ * during the copy (completeBlobs). A failed backup leaves no directory behind.
  * The backup directory is 0700: it holds password and session hashes.
  */
 export async function backup(dataDir: string, target: string, now = new Date()): Promise<BackupResult> {
@@ -96,7 +165,16 @@ export async function backup(dataDir: string, target: string, now = new Date()):
   for (let i = 2; existsSync(dir); i++) dir = join(target, `ligature-backup-${stamp(now)}-${i}`)
   await mkdir(dir, { mode: 0o700 })
   await chmod(dir, 0o700) // mkdir's mode is masked by the umask
+  try {
+    return await writeBackup(dataDir, dbFile, dir, now)
+  } catch (e) {
+    // A half-written backup must not be copied off-site as if it were one (it has no backup.json yet).
+    await rm(dir, { recursive: true, force: true }).catch(() => { /* the original error matters more */ })
+    throw e
+  }
+}
 
+async function writeBackup(dataDir: string, dbFile: string, dir: string, now: Date): Promise<BackupResult> {
   const live = new Database(dbFile, { fileMustExist: true })
   try {
     live.pragma('busy_timeout = 5000')
@@ -133,6 +211,7 @@ export async function backup(dataDir: string, target: string, now = new Date()):
   } else {
     await mkdir(join(dir, 'blobs'))
   }
+  await completeBlobs(dir, blobsSrc)
   const { files: blobs, bytes: blobBytes } = await countFiles(join(dir, 'blobs'))
   await writeFile(join(dir, 'backup.json'), JSON.stringify({
     format: 'ligature-backup/1', createdAt: now.toISOString(), schemaVersion, blobs, blobBytes,
@@ -229,7 +308,7 @@ function requireUsername(raw: string | undefined): string {
 export async function resetPassword(dataDir: string, rawUsername: string, password: string): Promise<{ sessionsDeleted: number }> {
   const username = requireUsername(rawUsername)
   const passwordHash = await hashPassword(password)
-  const db = openDb(existingDbFile(dataDir))
+  const db = openDb(existingDbFile(dataDir), { log: toStderr })
   try {
     return db.transaction(() => {
       const user =db.prepare('SELECT id FROM users WHERE username = ?').get(username) as { id: string } | undefined
@@ -249,7 +328,7 @@ export async function createAdmin(dataDir: string, rawUsername: string, password
   const displayName = normalizeDisplayName(rawDisplayName ?? username)
   if (displayName === null) throw new CliError('invalid display name: 1-64 characters, no control characters')
   const passwordHash = await hashPassword(password)
-  const db = openDb(existingDbFile(dataDir))
+  const db = openDb(existingDbFile(dataDir), { log: toStderr })
   try {
     return db.transaction(() => {
       if (db.prepare('SELECT 1 FROM users WHERE username = ?').get(username)) {
@@ -266,6 +345,20 @@ export async function createAdmin(dataDir: string, rawUsername: string, password
   }
 }
 
+/* ------------------------------------------------------------------ restore */
+
+function restoreSummary(dataDir: string, src: string, r: RestoreResult): string {
+  const schema = r.schemaFrom === r.schemaTo ? `schema v${r.schemaTo}` : `schema v${r.schemaFrom} -> v${r.schemaTo}`
+  return [
+    `restored ${src} into ${dataDir} (backup of ${r.backupCreatedAt ?? 'unknown date'}, ${schema})`,
+    `  ${r.projects} project(s), ${r.files} file(s), ${r.blobs} blob(s)`,
+    `  ${r.docsRenamed} document(s) moved to a new generation: editor tabs still open from before must reload`,
+    `  ${r.sessionsEnded} session(s) of the backup ended: everyone logs in again`,
+    r.safetyDir === null ? '  DATA_DIR held no data before' : `  previous data kept in ${r.safetyDir} (delete it once the restored instance works)`,
+    '',
+  ].join('\n')
+}
+
 /* ------------------------------------------------------------------ entry */
 
 /** Runs one command; returns the process exit code (0 ok, 1 failed, 2 usage). */
@@ -276,9 +369,18 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
     switch (cmd) {
       case 'backup': {
         if (rest.length !== 1) break
-        const r = await backup(dataDir, resolve(rest[0]!))
+        const r = await backup(dataDir, backupTarget(dataDir, rest[0]!))
         io.stderr.write(`backup of ${dataDir}: schema v${r.schemaVersion}, ${r.blobs} blob(s), ${r.blobBytes} bytes\n`)
         io.stdout.write(`${r.dir}\n`)
+        return 0
+      }
+      case 'restore': {
+        const force = rest.includes('--force')
+        const args = rest.filter(a => a !== '--force')
+        if (args.length !== 1) break
+        const src = absoluteDir(args[0]!, 'backup directory', '/restore')
+        const r = await restore(dataDir, src, { force, log: line => io.stderr.write(`${line}\n`) })
+        io.stdout.write(restoreSummary(dataDir, src, r))
         return 0
       }
       case 'reset-password': {
@@ -312,7 +414,7 @@ export async function main(argv: string[], io: CliIo): Promise<number> {
         return cmd === undefined ? 2 : 0
     }
   } catch (e) {
-    io.stderr.write(`ligature: ${e instanceof CliError ? e.message : e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`)
+    io.stderr.write(`ligature: ${e instanceof CliError || e instanceof RestoreError || e instanceof SchemaTooNewError ? e.message : e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`)
     return 1
   }
   io.stderr.write(USAGE)

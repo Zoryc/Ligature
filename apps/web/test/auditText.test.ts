@@ -93,6 +93,13 @@ describe('audit sentences: administration', () => {
       .toBe('rebuilt an oversized document in Demo paper')
   })
 
+  it('backup.restore', () => {
+    const at = '2026-11-18T09:45:12.000Z'
+    expect(say('backup.restore', { via: 'cli', backupCreatedAt: at, projects: 2 }, { actor: null, project: null }))
+      .toBe(`restored the whole instance from the backup of ${formatWhen(Date.parse(at))} from the command line`)
+    expect(say('backup.restore', { backupCreatedAt: null }, { actor: null, project: null })).toBe('restored the whole instance from a backup')
+  })
+
   it('project.purge', () => {
     const purged = { id: 'p-9', name: '', deleted: true }
     expect(say('project.purge', { name: 'Old thesis', deletedAt: 5 }, { actor: null, project: purged }))

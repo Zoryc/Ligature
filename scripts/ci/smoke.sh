@@ -6,7 +6,8 @@
 #
 #   scripts/ci/smoke.sh [base-url]        default http://127.0.0.1:3000
 # Env: LIGATURE_ORIGIN (Origin header for mutating requests; default: the base URL), SMOKE_CLI=1,
-#      SMOKE_TIMEOUT (seconds to wait for the app, default 180). Needs curl and jq.
+#      SMOKE_TIMEOUT (seconds to wait for the app, default 180), SMOKE_SETUP_TOKEN (the first-admin setup
+#      token of a production instance; default: read from `docker compose logs app`). Needs curl and jq.
 set -euo pipefail
 
 BASE="${1:-http://127.0.0.1:3000}"
@@ -71,8 +72,22 @@ code="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/some/client/route")"
 [ "$code" = 200 ] || fail "SPA fallback GET /some/client/route -> $code"
 log "SPA served"
 
-# 3. First signup becomes instance admin.
-expect 200 POST /api/auth/signup "{\"username\":\"$USER_NAME\",\"displayName\":\"CI Admin\",\"password\":\"$PASSWORD\"}"
+# 3. First signup becomes instance admin. In production it needs the setup token the app prints to its log
+#    (auth/setup.ts): without it, 403. SMOKE_SETUP_TOKEN gives it; otherwise it is read from the app's log.
+signup="{\"username\":\"$USER_NAME\",\"displayName\":\"CI Admin\",\"password\":\"$PASSWORD\""
+expect 200 GET /api/instance
+if [ "$(jq -r .setupRequired "$tmp/body")" = "true" ]; then
+  expect 403 POST /api/auth/signup "$signup}"
+  [ "$(jq -r .error "$tmp/body")" = "setup-token-required" ] || fail "signup without the setup token: wrong error"
+  token="${SMOKE_SETUP_TOKEN:-}"
+  if [ -z "$token" ]; then
+    token="$(docker compose logs --no-color app | sed -n 's/.*#\/signup?setup=\([A-Za-z0-9_-]*\).*/\1/p' | tail -n 1)"
+  fi
+  [ -n "$token" ] || fail "no setup link in the app's log (docker compose logs app)"
+  signup="$signup,\"setupToken\":\"$token\""
+  log "setup token required and found"
+fi
+expect 200 POST /api/auth/signup "$signup}"
 [ "$(jq -r .isAdmin "$tmp/body")" = "true" ] || fail "the first account is not admin"
 COOKIE="$(session_cookie)"
 expect 200 GET /api/me

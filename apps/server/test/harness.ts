@@ -82,11 +82,14 @@ export async function demoProject(base: string, cookie: string): Promise<Project
   return getJson<ProjectDetail>(base, `/api/projects/${list[0]!.id}`, cookie)
 }
 
-/** A Node Hocuspocus client that authenticates with the session cookie, like a browser would. */
-export function connect(base: string, cookie: string, docName: string) {
+/**
+ * A Node Hocuspocus client that authenticates with the session cookie, like a browser would. A function
+ * gives the cookie of each (re)connection: the browser's cookie after its user logged in again.
+ */
+export function connect(base: string, cookie: string | (() => string), docName: string) {
   const Polyfill = class extends WebSocket {
     constructor(url: string, protocols?: string | string[]) {
-      super(url, protocols, { headers: { cookie, origin: ORIGIN } })
+      super(url, protocols, { headers: { cookie: typeof cookie === 'string' ? cookie : cookie(), origin: ORIGIN } })
     }
   }
   const socket = new HocuspocusProviderWebsocket({

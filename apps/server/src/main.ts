@@ -1,5 +1,7 @@
 import { resolve } from 'node:path'
-import { originChecker } from './http/origins.ts'
+import { hasUsers } from './auth/settings.ts'
+import { setupLogLine } from './auth/setup.ts'
+import { originChecker, parseAllowedOrigins } from './http/origins.ts'
 import { startLigature } from './server.ts'
 
 const env = process.env
@@ -8,8 +10,7 @@ const PORT = Number(env.PORT ?? 3000)
 const HOST = env.HOST ?? (PROD ? '0.0.0.0' : '127.0.0.1')
 const DATA_DIR = resolve(env.DATA_DIR ?? 'data')
 const COMPILER_URL = env.COMPILER_URL ?? (PROD ? 'unix:/run/ligature/compiler.sock' : 'http://127.0.0.1:7071')
-const ALLOWED_ORIGINS = new Set((env.ALLOWED_ORIGINS ?? (PROD ? '' : 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000'))
-  .split(',').map(s => s.trim()).filter(Boolean))
+const ALLOWED_ORIGINS = new Set(allowedOrigins(env.ALLOWED_ORIGINS ?? (PROD ? '' : 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000')))
 // Dev login and the seeded users (known password) only in an explicit development environment:
 // NODE_ENV unset, `development` or `test`. Any other value (e.g. `staging`) fails closed.
 const DEV_ENV = !PROD && [undefined, '', 'development', 'test'].includes(env.NODE_ENV)
@@ -27,6 +28,16 @@ if (PROD && COMPILER_URL.startsWith('http:') && env.ALLOW_TCP_COMPILER !== '1') 
   throw new Error('In production the compiler must be reached over a unix socket (COMPILER_URL=unix:...)')
 }
 
+/** A malformed entry would make every browser request fail with 'bad-origin': refuse to start instead. */
+function allowedOrigins(raw: string): string[] {
+  try {
+    return parseAllowedOrigins(raw)
+  } catch (e) {
+    console.error(`[ligature] ${(e as Error).message}`)
+    process.exit(1)
+  }
+}
+
 const app = startLigature({
   dataDir: DATA_DIR, port: PORT, host: HOST, compilerUrl: COMPILER_URL,
   isAllowedOrigin: originChecker(ALLOWED_ORIGINS, !PROD),
@@ -40,6 +51,9 @@ const app = startLigature({
 
 app.listening.then(() => {
   console.log(`[ligature] listening on http://${HOST}:${PORT}  data=${DATA_DIR}  compiler=${COMPILER_URL}`)
+  if (app.setupToken !== null && !hasUsers(app.db)) {
+    console.log(setupLogLine([...ALLOWED_ORIGINS][0] ?? `http://localhost:${PORT}`, app.setupToken))
+  }
   if (DEV_LOGIN) console.warn('[ligature] DEV LOGIN ENABLED (development only): anyone can log in as any seeded user')
   app.compiler.health().then(ok => console.log(`[ligature] compiler ${ok ? 'reachable' : 'NOT reachable (compiles will fail)'}`))
 }, err => {

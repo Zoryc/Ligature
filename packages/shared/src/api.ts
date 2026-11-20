@@ -19,6 +19,11 @@ export interface InstanceInfo {
   hasUsers: boolean
   /** true only in development builds (enables /api/dev/login). */
   devLogin: boolean
+  /**
+   * true while a production instance has no accounts: the first signup must carry the setup token
+   * printed in the server log (the #/signup?setup=... link), else 403 'setup-token-required'.
+   */
+  setupRequired: boolean
 }
 
 /** POST /api/auth/signup */
@@ -28,6 +33,8 @@ export interface SignupRequest {
   password: string
   /** Required when registration is 'invite-only' (unless this is the very first account). */
   inviteToken?: string
+  /** The first account on a production instance only: the token from the server log's setup link. */
+  setupToken?: string
 }
 /** POST /api/auth/login */
 export interface LoginRequest { username: string; password: string }
@@ -458,7 +465,7 @@ export type AuditCategory = 'account' | 'admin' | 'members' | 'projects' | 'hist
 
 export const AUDIT_CATEGORIES: Record<AuditCategory, readonly string[]> = {
   account: ['signup', 'login', 'login-failure', 'logout-all'],
-  admin: ['admin-user-create', 'admin-user-update', 'settings-update', 'storage.view', 'gc.run', 'doc.rebuild', 'project.purge'],
+  admin: ['admin-user-create', 'admin-user-update', 'settings-update', 'storage.view', 'gc.run', 'doc.rebuild', 'project.purge', 'backup.restore'],
   members: ['member-add', 'member-role-change', 'member-remove', 'ownership-transfer', 'invite-create', 'invite-revoke', 'invite-accept'],
   projects: ['project-create', 'project-delete', 'project.setting', 'file-delete', 'file.restore', 'file.purge', 'trash.empty'],
   history: ['version.create', 'version.label', 'version.restore'],

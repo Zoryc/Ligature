@@ -7,6 +7,7 @@ import { ApiError } from '../../errors.ts'
 import { hashPassword, verifyPassword } from '../../auth/password.ts'
 import { createSession, deleteSession, SESSION_COOKIE } from '../../auth/sessions.ts'
 import { getSettings, hasUsers } from '../../auth/settings.ts'
+import { checkSetupToken } from '../../auth/setup.ts'
 import { getUserById, getUserByUsername, insertUser, setPassword, toMe, validateNewUser } from '../../auth/users.ts'
 import { displayNameSchema, passwordFieldSchema } from '../../auth/validation.ts'
 import { announceJoin, findActiveInvite, joinWithInvite, type Joined } from '../../projects/invites.ts'
@@ -21,6 +22,7 @@ const signupSchema = z.strictObject({
   displayName: z.string().max(256),
   password: passwordFieldSchema,
   inviteToken: z.string().max(128).optional(),
+  setupToken: z.string().max(128).optional(),
 })
 const loginSchema = z.strictObject({ username: z.string().max(64), password: passwordFieldSchema })
 const updateMeSchema = z.strictObject({ displayName: displayNameSchema })
@@ -33,6 +35,7 @@ export function authRoutes(deps: RouteDeps): Hono<Env> {
 
   app.get('/instance', c => c.json({
     registration: getSettings(db).registration, hasUsers: hasUsers(db), devLogin: deps.devLogin,
+    setupRequired: deps.setupToken !== null && !hasUsers(db),
   } satisfies InstanceInfo))
 
   app.post('/auth/signup', async c => {
@@ -44,6 +47,7 @@ export function authRoutes(deps: RouteDeps): Hono<Env> {
     // so two concurrent first signups cannot both become admin.
     const res = db.transaction(() => {
       const first = !hasUsers(db)
+      if (first && deps.setupToken !== null) checkSetupToken(deps.setupToken, body.setupToken)
       if (!first) {
         const mode = getSettings(db).registration
         if (mode === 'closed') throw new ApiError(403, 'registration-closed', 'Registration is closed; ask an administrator for an account')

@@ -10,8 +10,8 @@
   import { displayNameProblem, passwordProblem, signupMode, usernameProblem } from '../lib/validation.ts'
   import Logo from '../lib/Logo.svelte'
 
-  interface Props { invite: string | null }
-  let { invite }: Props = $props()
+  interface Props { invite: string | null; setup: string | null }
+  let { invite, setup }: Props = $props()
 
   let username = $state('')
   let displayName = $state('')
@@ -25,6 +25,8 @@
 
   let instance = $derived(session.instance)
   let mode = $derived(instance ? signupMode(instance, invite !== null && inviteError === null) : null)
+  /** A production server with no accounts only takes the first signup with the setup link from its log. */
+  let needsSetupLink = $derived(mode === 'first-user' && instance?.setupRequired === true && setup === null)
   let problem = $derived(usernameProblem(username) ?? displayNameProblem(displayName) ?? passwordProblem(password, confirm))
 
   onMount(async () => {
@@ -47,6 +49,7 @@
       await signup({
         username: username.trim().toLowerCase(), displayName: displayName.trim(), password,
         ...(invite && mode === 'with-invite' ? { inviteToken: invite } : {}),
+        ...(setup && mode === 'first-user' ? { setupToken: setup } : {}),
       })
       if (preview && mode === 'with-invite') toast(`Welcome! You joined "${preview.projectName}" as ${preview.role}.`)
       else if (mode === 'first-user') toast('Welcome! Your account is the server administrator.')
@@ -73,7 +76,10 @@
     {#if !instance}
       <p class="muted">Loading…</p>
     {:else}
-      {#if mode === 'first-user'}
+      {#if needsSetupLink}
+        <p class="warning">This server has no accounts yet. Open the setup link printed in the server log
+          (<code>docker compose -f docker/compose.yaml logs app</code>), or create an admin with <code>ligature create-admin</code>.</p>
+      {:else if mode === 'first-user'}
         <p class="warning">This server has no accounts yet. The account you create now becomes the <strong>server administrator</strong>.</p>
       {/if}
       {#if invite}
@@ -84,7 +90,9 @@
         {/if}
       {/if}
 
-      {#if mode === 'closed'}
+      {#if needsSetupLink}
+        <!-- no form: the server would refuse the signup without the setup token -->
+      {:else if mode === 'closed'}
         <p class="error">Registration is closed on this server. Ask an administrator for an account.</p>
       {:else if mode === 'needs-invite'}
         <p class="error">You need an invite link to sign up on this server. Ask a project owner for one.</p>

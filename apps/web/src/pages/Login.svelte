@@ -62,7 +62,10 @@
   <section class="sheet">
     <h1>Log in to Ligature</h1>
 
-    {#if instance && !instance.hasUsers}
+    {#if instance && !instance.hasUsers && instance.setupRequired}
+      <p class="warning">This server has no accounts yet. Open the setup link printed in the server log
+        (<code>docker compose -f docker/compose.yaml logs app</code>), or create an admin with <code>ligature create-admin</code>.</p>
+    {:else if instance && !instance.hasUsers}
       <p class="warning">This server has no accounts yet. <a href="#/signup">Create the first account</a>; it becomes the administrator.</p>
     {/if}
 

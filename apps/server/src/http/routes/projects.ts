@@ -8,6 +8,7 @@ import { listProjects, projectDetail } from '../../projects/repo.ts'
 import { createProject, deleteProject, requireAccess, requireRole, updateProject } from '../../projects/service.ts'
 import { isUuid } from '../../services.ts'
 import { toBuildResult } from '../../compile/builds.ts'
+import { CompilerUnreachableError, unreachableLogger } from '../../compile/compilerClient.ts'
 import { readJson, type Env, type RouteDeps } from '../context.ts'
 
 const createSchema = z.strictObject({ name: z.string().max(1000) })
@@ -20,6 +21,7 @@ const updateSchema = z.strictObject({
 export function projectRoutes(deps: RouteDeps): Hono<Env> {
   const { db } = deps
   const app = new Hono<Env>()
+  const logUnreachable = unreachableLogger()
 
   app.get('/projects', c => c.json(listProjects(db, c.get('user').id) satisfies ProjectSummary[]))
 
@@ -66,7 +68,13 @@ export function projectRoutes(deps: RouteDeps): Hono<Env> {
     } catch (e) {
       if (e instanceof ApiError) throw e
       // Details (socket paths, internal addresses) go to the server log only.
-      console.error('compile failed', e)
+      if (e instanceof CompilerUnreachableError) {
+        // No build ran: do not let an outage use up the user's budget (else 429s once the compiler is back).
+        deps.limiters.compile.refund(user.id)
+        logUnreachable(e)
+      } else {
+        console.error('compile failed', e)
+      }
       throw new ApiError(503, 'compiler-unavailable', 'The compile service is unavailable; try again later')
     }
   })

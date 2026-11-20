@@ -15,6 +15,8 @@ export type AuditAction =
   | 'doc.rebuild' | 'gc.run' | 'project.purge' | 'storage.view'
   // Folio UI: a shared project setting changed (detail: { key, from, to } as shown to people)
   | 'project.setting'
+  // `ligature restore` (maintenance/restore.ts): written into the restored database
+  | 'backup.restore'
 
 export interface AuditEntry {
   actorId: string | null

@@ -19,9 +19,12 @@ import { DEFAULT_LIMITS, type Limits, type Services } from './services.ts'
 import { seedDev } from './dev/seed.ts'
 import { createHistory, type HistoryConfig } from './history/history.ts'
 import { readCookie, SESSION_COOKIE, sessionForToken } from './auth/sessions.ts'
+import { createSetupToken } from './auth/setup.ts'
+import { hasUsers } from './auth/settings.ts'
 import { createRebuilder, DEFAULT_REBUILD, type RebuildConfig, type Rebuilder } from './collab/rebuild.ts'
 import type { GcConfig } from './maintenance/gc.ts'
 import { createMaintenance, type Maintenance } from './maintenance/maintenance.ts'
+import { startHeartbeat } from './maintenance/heartbeat.ts'
 import {
   collabProbe, compilerProbe, createHealth, createProbeToken, dbProbe, diskProbe, HEALTH_PROBE_HEADER, isProbeToken, loopbackUrl,
   storeProbe, type Health, type HealthOptions,
@@ -105,6 +108,8 @@ export interface Ligature extends Services {
   rebuilder: Rebuilder
   /** GET /healthz (docs/M4.md §1). */
   health: Health
+  /** First-admin setup token, or null (development, or accounts existed at startup). main.ts logs it. */
+  setupToken: string | null
   /** Resolves once listening. */
   listening: Promise<void>
   /** Flush documents and close everything (does not exit the process). */
@@ -123,6 +128,8 @@ function toRequest(req: IncomingMessage): Request {
 /** Build and start the whole app server (HTTP API + static SPA + Hocuspocus WebSocket). */
 export function startLigature(cfg: LigatureConfig): Ligature {
   const db: DB = openDb(join(cfg.dataDir, 'app.db'))
+  // Tells `ligature restore` that this DATA_DIR is in use (removed again once the database is closed).
+  const heartbeat = startHeartbeat(cfg.dataDir)
   const store = new DocStore(db)
   const collab = createCollab(db, store, cfg.sessionCheckMs !== undefined ? { sessionCheckMs: cfg.sessionCheckMs } : {})
   const blobs = new BlobStore(db, join(cfg.dataDir, 'blobs'))
@@ -181,8 +188,10 @@ export function startLigature(cfg: LigatureConfig): Ligature {
   }, cfg.health)
 
   const webDistDir = cfg.webDistDir && existsSync(join(cfg.webDistDir, 'index.html')) ? cfg.webDistDir : null
+  // A fresh public instance must not make whoever comes first its admin (auth/setup.ts).
+  const setupToken = cfg.production && !hasUsers(db) ? createSetupToken() : null
   const app = createApp({
-    db, store, collab, blobs, limits, history, limiters, compile: orchestrator, maintenance, rebuilder,
+    db, store, collab, blobs, limits, history, limiters, compile: orchestrator, maintenance, rebuilder, setupToken,
     isAllowedOrigin: cfg.isAllowedOrigin, devLogin: cfg.devLogin, secureCookies: cfg.production,
     trustProxy: cfg.trustProxy, webDistDir, health,
   })
@@ -252,7 +261,7 @@ export function startLigature(cfg: LigatureConfig): Ligature {
   let stopped = false
   return {
     db, store, collab, blobs, limits, history, limiters, server, app, orchestrator, compiler, listening, sweepTrash,
-    maintenance, rebuilder, health,
+    maintenance, rebuilder, health, setupToken,
     async stop() {
       if (stopped) return
       stopped = true
@@ -267,6 +276,7 @@ export function startLigature(cfg: LigatureConfig): Ligature {
       server.closeAllConnections?.()
       await new Promise<void>(r => server.close(() => r()))
       db.close()
+      heartbeat.stop()
     },
   }
 }

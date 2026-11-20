@@ -43,7 +43,7 @@
 {:else if route.name === 'login'}
   <Login next={route.next} />
 {:else if route.name === 'signup'}
-  {#key route.invite}<Signup invite={route.invite} />{/key}
+  {#key route.invite}<Signup invite={route.invite} setup={route.setup} />{/key}
 {:else if route.name === 'invite'}
   {#key route.token}<Invite token={route.token} />{/key}
 {:else if !session.me}

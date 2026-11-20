@@ -194,6 +194,10 @@ const SENTENCES: Record<string, Sentence> = {
   'gc.run': gcRun,
   'doc.rebuild': (e, d) => [d.reason === 'oversized' ? 'rebuilt an oversized document in ' : 'rebuilt a document of ', name(project(e))],
   'project.purge': e => ['permanently removed the deleted project ', name(recordedProject(e))],
+  'backup.restore': (_e, d) => {
+    const at = Date.parse(str(d.backupCreatedAt) ?? '')
+    return [`restored the whole instance from ${Number.isNaN(at) ? 'a backup' : `the backup of ${formatWhen(at)}`}${viaCli(d)}`]
+  },
 
   // members and invites
   'member-add': (e, d) => isSelf(e, d.userId) ? ['joined ', name(project(e)), ` as ${aRole(d.role)}`]

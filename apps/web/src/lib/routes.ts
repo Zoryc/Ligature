@@ -1,12 +1,13 @@
 /**
  * Hash routes (pure; the reactive router lives in router.svelte.ts):
- *   #/login[?next=/path]   #/signup[?invite=TOKEN]   #/invite/:token
+ *   #/login[?next=/path]   #/signup[?invite=TOKEN][&setup=TOKEN]   #/invite/:token
  *   #/projects   #/project/:id   #/account   #/admin   #/admin/storage   #/admin/audit
  */
 
 export type Route =
   | { name: 'login'; next: string | null }
-  | { name: 'signup'; invite: string | null }
+  /** `setup`: the first-admin token from the setup link in the server log (production, no accounts yet). */
+  | { name: 'signup'; invite: string | null; setup: string | null }
   | { name: 'invite'; token: string }
   | { name: 'projects' }
   | { name: 'project'; id: string }
@@ -35,7 +36,7 @@ export function parseHash(hash: string): Route {
   const path = q >= 0 ? raw.slice(0, q) : raw
   const params = new URLSearchParams(q >= 0 ? raw.slice(q + 1) : '')
   if (path === '/login') return { name: 'login', next: safeNext(params.get('next')) }
-  if (path === '/signup') return { name: 'signup', invite: params.get('invite') || null }
+  if (path === '/signup') return { name: 'signup', invite: params.get('invite') || null, setup: params.get('setup') || null }
   if (path === '/projects' || path === '/') return { name: 'projects' }
   if (path === '/account') return { name: 'account' }
   if (path === '/admin') return { name: 'admin', tab: 'users' }

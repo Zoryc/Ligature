@@ -20,6 +20,8 @@ export interface RouteDeps extends Services {
   secureCookies: boolean
   trustProxy: boolean
   devLogin: boolean
+  /** First-admin setup token (production with no accounts at startup), else null. See auth/setup.ts. */
+  setupToken: string | null
 }
 
 /** Client address: the socket peer, or the first X-Forwarded-For hop when TRUST_PROXY=1. */
