@@ -26,6 +26,8 @@ ARG NODE_IMAGE=node:24-bookworm-slim
 FROM ${NODE_IMAGE} AS node
 
 FROM ${TEXLIVE_IMAGE}
+# Lets `docker image prune --filter label=io.ligature.image` remove only Ligature's old images (docker/README.md).
+LABEL io.ligature.image=compiler
 
 # Node 24: just the binary from the official image (the TeX Live image is Debian-based, newer glibc).
 COPY --from=node /usr/local/bin/node /usr/local/bin/node

@@ -58,6 +58,8 @@ COPY apps/server apps/server
 
 # --- runtime ----------------------------------------------------------------------------------------
 FROM ${NODE_IMAGE}
+# Lets `docker image prune --filter label=io.ligature.image` remove only Ligature's old images (docker/README.md).
+LABEL io.ligature.image=app
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=server-deps /src/package.json /src/tsconfig.base.json ./

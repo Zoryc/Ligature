@@ -4,6 +4,38 @@ Ligature follows [semantic versioning](https://semver.org): a new major version 
 when upgrading (it is then listed under **Upgrading**). Each version is a git tag (`v1.0.0`); hosts build
 the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compose.yaml up -d --build`).
 
+## 1.1.0 — 2026-11-20
+
+**Ligature no longer sets up a reverse proxy.** It runs on `127.0.0.1:3000` and you add it as one site to the
+proxy you already use (Caddy, nginx, Traefik, ...), next to your other sites. The 1.0.0 guide replaced the
+whole Caddyfile, which removed a server's other sites.
+
+**Upgrading from 1.0.0:** nothing to do for Ligature itself (`git pull`, then `up -d --build`). If you
+followed the 1.0.0 guide, your Caddyfile is already set up; to get the safer `X-Forwarded-For` handling below,
+add `header_up X-Forwarded-For {client_ip}` inside its `reverse_proxy` block (see `docker/Caddyfile.example`).
+
+**Deployment guide** ([docker/README.md](docker/README.md))
+- Step 5, "Add Ligature to your reverse proxy", tested in Docker against both proxies:
+  - **Caddy**: the site block is appended to a copy of your Caddyfile, validated, then swapped in, so a
+    mistake never leaves a broken config (or one glued onto a last line without a newline).
+  - **nginx** (new): a complete site config that works with Ubuntu 24.04's nginx 1.24 and newer. The
+    certificate is obtained with `certbot certonly`, because plain `certbot --nginx` copies the default site,
+    which then takes over the host name. The site is disabled again if `nginx -t` fails.
+  - **A proxy in Docker**: connect it to `ligature_default` and use `ligature-app-1:3000` (unique on the host);
+    nginx re-resolves it through Docker's DNS, so an upgrade does not leave it on an old address.
+- The proxy sets `X-Forwarded-For` to the client's address itself (Caddy `{client_ip}`, nginx
+  `$remote_addr`), so login rate limits cannot be bypassed with a forged header (behind a CDN, as long as
+  the proxy is told how to find the real client; the guide says how).
+- Safe on a server that already runs other things: `ufw enable` only on a fresh server; Docker is not
+  reinstalled when present; the upgrade's clean-up removes only Ligature's old images (new image label
+  `io.ligature.image`), never other projects' images or build cache; the backup script works from any
+  directory (`LIGATURE_DIR`).
+- New: running a second instance on the same server (`COMPOSE_PROJECT_NAME` in `docker/.env`).
+
+**Interface**
+- The drawn "Li" of the logo is rendered on whole pixels and no longer clipped at the edge of its box,
+  so it is a little sharper at small sizes.
+
 ## 1.0.0 — 2026-11-20
 
 The first release: a self-hosted, real-time collaborative LaTeX editor for a team that trusts each other.

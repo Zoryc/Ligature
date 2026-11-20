@@ -20,18 +20,24 @@ images to pull.
   0.4 GB. Plus room for your projects and backups.
 - The first build takes about **10 to 15 minutes**.
 - A domain name with an **A (and/or AAAA) record** pointing at the server, e.g. `latex.example.org`.
-- Ports **80 and 443** open, both in ufw and in your provider's firewall (Caddy needs 80 to get the TLS
-  certificate):
-
-  ```sh
-  sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443 && sudo ufw enable
-  ```
-
+- A **TLS reverse proxy** on the server (Caddy, nginx, Traefik, ...). Ligature does not install or configure
+  one: it listens on `127.0.0.1:3000` only, and step 5 adds it to your proxy next to your other sites. No
+  proxy yet? Caddy is the simplest (it gets the certificate itself): install it from
+  <https://caddyserver.com/docs/install#debian-ubuntu-raspbian>, then use the Caddy block of step 5.
+- Ports **80 and 443** open for your proxy, in ufw and in your provider's firewall (80 is also needed to get
+  the TLS certificate). If the server already has a firewall, just allow 80 and 443 in it (with ufw:
+  `sudo ufw allow 80/tcp && sudo ufw allow 443`). Only on a **fresh** server with no firewall yet, turn ufw on
+  with `sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443 && sudo ufw enable`:
+  `ufw enable` blocks every port not allowed, which would cut off other services (or SSH on a non-standard port).
 - No mail server is needed: Ligature sends no email.
 
 Run the commands below as a normal user with `sudo`.
 
 ### 1. Install Docker
+
+**Already have Docker?** If `docker compose version` prints v2.24 or later and `docker buildx version` works,
+skip this step: do not reinstall it, since replacing a Docker installation restarts every container on the
+server. (Ubuntu's own `docker.io` package usually lacks Buildx; read Docker's docs before switching packages.)
 
 Docker Engine with the Compose and Buildx plugins, from Docker's own apt repository (the Ubuntu
 `docker.io` package is too old). Full instructions: <https://docs.docker.com/engine/install/ubuntu/>.
@@ -56,23 +62,7 @@ To run `docker` without `sudo`, add yourself to the `docker` group, then log out
 sudo usermod -aG docker "$USER"
 ```
 
-### 2. Install Caddy
-
-Caddy is the reverse proxy: it gets and renews the TLS certificate itself. From Caddy's apt repository
-(<https://caddyserver.com/docs/install#debian-ubuntu-raspbian>):
-
-```sh
-sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
-sudo apt-get update
-sudo apt-get install -y caddy
-```
-
-It starts right away with a placeholder page; Ligature is not reachable through it until step 6.
-
-### 3. Get Ligature and configure it
+### 2. Get Ligature and configure it
 
 ```sh
 sudo git clone https://github.com/Zoryc/Ligature /opt/ligature
@@ -86,10 +76,13 @@ In `docker/.env`, set:
 
 - `LIGATURE_ORIGIN=https://latex.example.org`: exactly what users type in the browser. Scheme + host
   (+ port if not 443), **no trailing slash, no path**. Requests and WebSockets from any other origin are refused.
-- `LIGATURE_TRUST_PROXY=1` (already set in the example): Caddy overwrites `X-Forwarded-For`, so login rate
-  limits see the real client IPs.
+- `LIGATURE_TRUST_PROXY=1` (already set in the example): login rate limits then use the client address your
+  proxy puts in `X-Forwarded-For`. The Caddy and nginx configs of step 5 set it to the client's address
+  themselves, so a client cannot fake it; with another proxy, make sure it does the same.
+- `LIGATURE_PORT` only if port 3000 is already used on the server (the app is published on
+  `127.0.0.1:<port>`; use the same port in step 5).
 
-### 4. Build and start
+### 3. Build and start
 
 All `docker compose` commands in this guide run in `/opt/ligature`.
 
@@ -105,34 +98,94 @@ On a fresh instance the app's log has a line like:
 [ligature] No accounts yet. Create the first (admin) account at https://latex.example.org/#/signup?setup=<token>
 ```
 
-### 5. Create your admin account (before the site goes public)
+Ligature now runs on `127.0.0.1:3000`, reachable only from the server itself.
+
+### 4. Create your admin account (before the site goes public)
 
 ```sh
 docker compose -f docker/compose.yaml exec app ligature create-admin alice    # asks for the password twice, no echo
 ```
 
-Passwords are 10 to 256 characters. Alternatively, right after step 6, open the setup link from the log:
+Passwords are 10 to 256 characters. Alternatively, right after step 5, open the setup link from the log:
 in production the first signup **requires** that token (`setup-token-required` without it), so nobody who
 finds the site first can make themselves admin. The server prints a new token at every start until the
 first account exists; use the one from the latest log.
 
-### 6. Put Caddy in front
+### 5. Add Ligature to your reverse proxy
+
+Add one site for your host name that forwards to `127.0.0.1:3000` (or your `LIGATURE_PORT`). Your other
+sites are not touched. Whatever the proxy, it must:
+
+- pass **WebSocket upgrades** (on `/collab`; without them the editor stays "Offline"),
+- keep the **Host** header, and set **`X-Forwarded-For`** to the client's address (overwrite, not append),
+- allow **uploads up to 200 MB** and **requests up to 10 minutes** (zip imports, long compiles).
+
+**Caddy** on the host: add the site block of [`docker/Caddyfile.example`](Caddyfile.example) to your
+Caddyfile, next to your other sites. The commands append it to a **copy**, validate the copy, and only then
+replace the live file, so a mistake never leaves a broken Caddyfile behind:
 
 ```sh
-sudo cp docker/Caddyfile.example /etc/caddy/Caddyfile
-sudo sed -i 's/latex.example.org/YOUR.DOMAIN/' /etc/caddy/Caddyfile     # your host name
-sudo systemctl reload caddy
+sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.new
+{ echo; sed 's/latex.example.org/YOUR.DOMAIN/' docker/Caddyfile.example; } | sudo tee -a /etc/caddy/Caddyfile.new > /dev/null
+sudo caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile.new \
+  && sudo mv /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
-The port in its `reverse_proxy 127.0.0.1:3000` line must match `LIGATURE_PORT` (default 3000).
+If `validate` fails, the live Caddyfile is unchanged: fix `/etc/caddy/Caddyfile.new` (or delete it) and run
+the last command again. `reload` applies the new site without interrupting your other sites. The block sets
+`X-Forwarded-For` itself, from the client address Caddy determined (a forged header from a client is
+replaced). If your Caddy sits behind a CDN with `trusted_proxies`, configure how it finds the real client, as
+for your other sites (Cloudflare: `client_ip_headers CF-Connecting-IP`, or `trusted_proxies_strict`).
 
-### 7. Check
+**nginx** on the host: [`docker/nginx.example.conf`](nginx.example.conf) is a complete site (HTTP to HTTPS
+redirect, WebSockets, upload size, timeouts). Get the certificate with `certonly`: plain `certbot --nginx`
+would install it into a copy of your default site, which then takes over the host name.
+
+```sh
+sudo apt-get install -y certbot python3-certbot-nginx           # if certbot is not installed yet
+sudo certbot certonly --nginx -d YOUR.DOMAIN                     # only gets the certificate; changes no site
+sed 's/latex.example.org/YOUR.DOMAIN/g' docker/nginx.example.conf | sudo tee /etc/nginx/sites-available/ligature > /dev/null
+sudo ln -s /etc/nginx/sites-available/ligature /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx || sudo rm /etc/nginx/sites-enabled/ligature
+```
+
+The last line disables the site again if the check fails, so a reload of your other sites cannot break.
+It works with Ubuntu 24.04's nginx (1.24) and newer.
+
+**A proxy that runs in Docker** (a Caddy, nginx or Traefik container): inside that container `127.0.0.1` is the
+container itself, so it cannot reach the app's published port. Connect it to Ligature's network:
+
+```sh
+docker network connect ligature_default <your-proxy-container>
+```
+
+and use the app container's name, **`ligature-app-1:3000`**, as the upstream (unique on the host; the short
+name `app` can also mean another project's container on a shared proxy):
+
+- Caddy: `reverse_proxy ligature-app-1:3000` (Caddy looks the name up again for each connection).
+- nginx: it looks names up only once at start, so after a Ligature upgrade (new container, new address) it
+  would keep the old one. Use Docker's DNS and a variable, which makes nginx look it up again:
+
+  ```nginx
+  resolver 127.0.0.11 valid=10s;
+  set $ligature_upstream http://ligature-app-1:3000;
+  proxy_pass $ligature_upstream;
+  ```
+
+- Traefik: a router for your host name whose service URL is `http://ligature-app-1:3000` (file provider);
+  Traefik passes WebSockets by default.
+
+The network and container names come from the compose project name, `ligature` by default (`docker network ls`,
+`docker ps`). Run `network connect` again if you recreate the proxy container, or declare `ligature_default` as
+an external network in your proxy's compose file.
+
+### 6. Check
 
 ```sh
 curl -fsS https://latex.example.org/healthz      # {"ok":true,"status":"ok",...}
 ```
 
-And that Caddy passes WebSocket upgrades (expect `HTTP/1.1 101 Switching Protocols`; any other status, or a
+And that your proxy passes WebSocket upgrades (expect `HTTP/1.1 101 Switching Protocols`; any other status, or a
 `200` with the web page, means the proxy does not pass upgrades and the editor will stay "Offline"):
 
 ```sh
@@ -143,7 +196,7 @@ curl -si --http1.1 --max-time 3 https://latex.example.org/collab \
 
 Then log in at `https://latex.example.org` with the admin account.
 
-### 8. Choose who can sign up
+### 7. Choose who can sign up
 
 In the admin page, **Registration**:
 
@@ -167,8 +220,8 @@ In `docker/.env` (see `.env.example`); apply a change with `docker compose -f do
 | Variable | Default | |
 |---|---|---|
 | `LIGATURE_ORIGIN` | (required) | The public origin: scheme + host [+ port], no trailing slash, no path. Requests and WebSockets from any other origin are refused. |
-| `LIGATURE_TRUST_PROXY` | `0` in compose, `1` in `.env.example` | `1` behind Caddy, so login rate limits see client IPs instead of the proxy's. Set `0` only if the app port is reachable by anything but your reverse proxy. |
-| `LIGATURE_PORT` | `3000` | Host port the app is published on, on **127.0.0.1 only** (inside the container it always listens on 3000). Must match the `reverse_proxy` line of the Caddyfile. Never publish the app on `0.0.0.0`: Docker's port forwarding bypasses ufw. |
+| `LIGATURE_TRUST_PROXY` | `0` in compose, `1` in `.env.example` | `1` behind a reverse proxy that sets `X-Forwarded-For` to the client's address (the Caddy and nginx configs of step 5 do), so login rate limits see client IPs instead of the proxy's. Set `0` only if the app port is reachable by anything but your reverse proxy. |
+| `LIGATURE_PORT` | `3000` | Host port the app is published on, on **127.0.0.1 only** (inside the container it always listens on 3000). Must match the upstream port in your reverse proxy (step 5). Never publish the app on `0.0.0.0`: Docker's port forwarding bypasses ufw. |
 | `LIGATURE_TRASH_RETENTION_DAYS` | `30` | Deleted files stay in the trash can this long, then are purged. |
 | `LIGATURE_TEXLIVE_IMAGE` | full scheme | The compiler's TeX Live base: `texlive/texlive:latest-full` pinned by digest (about 2.8 GB compressed). The medium scheme (about 0.9 GB) is in `.env.example`. Island of TeX publishes the current release only as `latest-*` (rebuilt weekly); update the digest with `docker buildx imagetools inspect texlive/texlive:latest-full`. |
 | `LIGATURE_TEXLIVE_EXTRA` | (none) | Extra CTAN packages installed into the compiler image at build time, space-separated (e.g. `biblatex biber tikz-cd` on top of the medium scheme). The compiler has no network, so this is the only way to add packages; rebuild after changing it. |
@@ -188,7 +241,7 @@ The app container's own HEALTHCHECK uses `/healthz?scope=app`, which leaves out 
 container has its own HEALTHCHECK, and restarting the app would not fix it).
 
 `/healthz` opens its WebSocket over loopback inside the container, so a reverse proxy that drops WebSocket
-upgrades is **not** detected by it: use the `curl` upgrade test of step 7.
+upgrades is **not** detected by it: use the `curl` upgrade test of step 6.
 
 On Docker Desktop (Windows, macOS) the disk check sees Docker's virtual disk, not your real drive.
 
@@ -196,8 +249,9 @@ On Docker Desktop (Windows, macOS) the disk check sees Docker's virtual disk, no
 
 ```sh
 docker compose -f docker/compose.yaml logs -f --tail=200 app compiler
-journalctl -u caddy -f
 ```
+
+and your proxy's own logs (e.g. `journalctl -u caddy -f`, or `/var/log/nginx/error.log`).
 
 Container logs are rotated (`x-logging` in `compose.yaml`: Docker's `local` driver, 5 files of 10 MB per
 container).
@@ -224,16 +278,19 @@ already open stay open until they reconnect (an admin can also disable the user 
 
 ## Back up
 
-A nightly backup into `/var/backups/ligature`, kept 14 days. Install the script:
+A nightly backup into `/var/backups/ligature`, kept 14 days. Install the script (if Ligature is not in
+`/opt/ligature`, change `LIGATURE_DIR` at its top):
 
 ```sh
 sudo tee /usr/local/bin/ligature-backup > /dev/null <<'EOF'
 #!/usr/bin/env bash
-# Online backup of Ligature, copied out of the data volume into /var/backups/ligature.
+# Online backup of Ligature, copied out of the data volume into $LIGATURE_BACKUPS.
 set -euo pipefail
-cd /opt/ligature
+LIGATURE_DIR="${LIGATURE_DIR:-/opt/ligature}"            # where you cloned Ligature
+LIGATURE_BACKUPS="${LIGATURE_BACKUPS:-/var/backups/ligature}"
+cd "$LIGATURE_DIR"
 C="docker compose -f docker/compose.yaml"
-dest=/var/backups/ligature
+dest="$LIGATURE_BACKUPS"
 mkdir -p "$dest" && chmod 700 "$dest"
 dir=$($C exec -T app ligature backup /data/backups | tail -n 1)   # /data/backups/ligature-backup-<time>
 [ -n "$dir" ]
@@ -283,7 +340,7 @@ logout, password reset or revoked session since the backup is not undone. Passwo
 are those of the backup. A read-only backup (e.g. `chmod -R a-w`) is fine: the restored files get normal
 modes.
 
-To move an instance to another server: back up, copy the directory over, deploy there (steps 1 to 4), restore,
+To move an instance to another server: back up, copy the directory over, deploy there (steps 1 to 3), restore, add it to the proxy (step 5),
 then update DNS.
 
 ## Upgrade
@@ -296,18 +353,38 @@ diff docker/.env.example docker/.env                 # 3. new settings? copy wha
 docker compose -f docker/compose.yaml up -d --build  # 4. rebuild and restart (migrations run at start)
 docker compose -f docker/compose.yaml ps             # 5. both "(healthy)"
 curl -fsS https://latex.example.org/healthz
-docker image prune -f && docker builder prune -f     # 6. free the disk space of old images and build cache
+docker image prune -f --filter label=io.ligature.image   # 6. free the space of Ligature's old images only
 ```
+
+Step 6 removes only Ligature's previous images (they carry the label `io.ligature.image`), never other
+projects' images. On a server used only by Ligature, `docker builder prune -f` also frees the build cache;
+after a TeX Live update, `docker images texlive/texlive` lists the old base image to remove.
 
 **Rollback:** `git checkout <previous tag or commit>` (see `git log --oneline`), then
 `docker compose -f docker/compose.yaml up -d --build`. If the new version changed the database schema, the
 old code refuses to start (`... has database schema vN, but this version of Ligature only knows schemas up
 to ...`): restore the backup taken in step 1. Go back to the latest code later with `git checkout main`.
 
+## A second instance on the same server
+
+For example a test copy next to the real one: clone into another directory and give it its own name, port
+and host name in its `docker/.env`:
+
+```sh
+sudo git clone https://github.com/Zoryc/Ligature /opt/ligature-test && sudo chown -R "$USER": /opt/ligature-test
+cd /opt/ligature-test && cp docker/.env.example docker/.env
+# in docker/.env:  COMPOSE_PROJECT_NAME=ligature-test   LIGATURE_PORT=3001   LIGATURE_ORIGIN=https://test.example.org
+```
+
+Everything then follows that name: containers `ligature-test-app-1`, network `ligature-test_default`, volumes
+`ligature-test_data` ... (the two instances share nothing). Add it to your proxy with port 3001 (step 5), and
+back it up with `LIGATURE_DIR=/opt/ligature-test LIGATURE_BACKUPS=/var/backups/ligature-test ligature-backup`.
+
 ## Windows and macOS (Docker Desktop)
 
-For a local trial the same compose stack works with Docker Desktop (use
-`LIGATURE_ORIGIN=http://localhost:3000` and open that URL; no Caddy needed). Run the backup and restore
+For a local trial the same compose stack works with Docker Desktop: from the repository, `npm run stack -- up`
+starts it behind a local Caddy at <http://localhost:8080> (`docker/compose.local.yaml`; `npm run stack -- stop`
+to stop it). Or without any proxy: `LIGATURE_ORIGIN=http://localhost:3000` in `docker/.env`, then open that URL. Run the backup and restore
 commands in WSL, or in Git Bash with `export MSYS_NO_PATHCONV=1` (otherwise Git Bash rewrites container paths
 such as `/data/backups` into Windows paths). The disk check of `/healthz` sees Docker's virtual disk.
 

@@ -1,11 +1,8 @@
-# Caddy in front of Ligature (PLAN section 3). Caddy gets and renews the TLS certificate itself.
-#   sudo cp docker/Caddyfile.example /etc/caddy/Caddyfile   # then replace the host name
-#   sudo systemctl reload caddy
-# The app is published on 127.0.0.1:${LIGATURE_PORT:-3000} only (docker/compose.yaml): the port in
-# reverse_proxy below must match LIGATURE_PORT in docker/.env. reverse_proxy passes WebSocket upgrades
-# (/collab) through unchanged. LIGATURE_ORIGIN must be exactly https://<this host>.
-# The app serves the web client (apps/web/dist) itself, so everything goes to the one upstream.
-# Caddy overwrites X-Forwarded-For from untrusted clients, so LIGATURE_TRUST_PROXY=1 is safe with it.
+# Ligature behind Caddy: a site block to ADD to your existing Caddyfile, next to your other sites (never
+# copy it over the file). docker/README.md step 5 has the commands (append to a copy, validate, then swap).
+# Caddy gets and renews the TLS certificate itself (ports 80 and 443 must reach it). reverse_proxy passes the
+# WebSocket upgrades of /collab through unchanged. The app serves the web client itself: one upstream.
+# Caddy running in Docker instead of on the host: see docker/README.md, "Add Ligature to your reverse proxy".
 
 latex.example.org {
 	encode zstd gzip
@@ -14,7 +11,13 @@ latex.example.org {
 	request_body {
 		max_size 200MB
 	}
+	# Must match LIGATURE_PORT in docker/.env (default 3000).
 	reverse_proxy 127.0.0.1:3000 {
+		# One value, the client's address as Caddy determined it, instead of a header the client could forge.
+		# LIGATURE_TRUST_PROXY=1 uses it for the login rate limits. Behind a CDN (trusted_proxies), make sure
+		# Caddy finds the real client: e.g. `client_ip_headers CF-Connecting-IP` for Cloudflare, or
+		# `trusted_proxies_strict`, in your global `servers` options.
+		header_up X-Forwarded-For {client_ip}
 		transport http {
 			read_timeout 10m
 			write_timeout 10m
@@ -22,7 +25,7 @@ latex.example.org {
 	}
 
 	# The app already sends X-Content-Type-Options and Referrer-Policy on its responses: `?` sets them
-	# only where it did not, so they are never duplicated. HSTS is Caddy's job (it knows TLS is on).
+	# only where it did not, so they are never duplicated. HSTS is the proxy's job (it knows TLS is on).
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		?X-Content-Type-Options nosniff

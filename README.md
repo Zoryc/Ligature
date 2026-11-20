@@ -32,10 +32,10 @@ each `*.localhost` host has its own login cookie.
 
 ## Deploy
 
-Two containers behind a TLS reverse proxy, run with Docker Compose:
+Two containers, run with Docker Compose, behind the TLS reverse proxy you already use (or add):
 
 ```
-browser ──HTTPS + WebSocket──> Caddy (TLS, :443)
+browser ──HTTPS + WebSocket──> your reverse proxy (Caddy, nginx, ...; TLS, :443)
                                  │  127.0.0.1:3000
                                  v
                       ┌─ app container :3000 ──────────────┐      volume data:
@@ -63,8 +63,12 @@ docker compose -f docker/compose.yaml up -d --build   # first build: 10 to 15 mi
 docker compose -f docker/compose.yaml exec app ligature create-admin alice
 ```
 
-The full guide for a fresh Ubuntu server (Docker, Caddy, admin account, backups, restore, upgrades):
-[docker/README.md](docker/README.md).
+Ligature then runs on `127.0.0.1:3000`; add it as a site to your reverse proxy, next to your other sites:
+ready-made configs for Caddy ([`docker/Caddyfile.example`](docker/Caddyfile.example)) and nginx
+([`docker/nginx.example.conf`](docker/nginx.example.conf)). Ligature installs no proxy itself.
+
+The full guide for a fresh Ubuntu server (Docker, admin account, adding it to your proxy, backups, restore,
+upgrades): [docker/README.md](docker/README.md).
 
 ## Tests
 

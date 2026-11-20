@@ -12,7 +12,8 @@
   }
   let { size = 21, reversed = false }: Props = $props()
 
-  let li = $derived(Math.round(size * 0.952 * 100) / 100)
+  /** Whole pixels: a fractional box blurs the bar's edges and shaves the outermost pixels of the letters. */
+  let li = $derived(Math.round(size * 0.952))
   let ink = $derived(reversed ? '#F4F1EA' : 'var(--ink)')
   let bar = $derived(reversed ? '#F4F1EA' : 'var(--teal)')
 </script>
@@ -38,5 +39,9 @@
     line-height: 1;
     letter-spacing: 0;
   }
-  svg { vertical-align: baseline; }
+  /*
+   * The drawn letters touch the edges of the 20×20 box (the foot of the L at left and bottom, the bar at the
+   * top), and an inline SVG clips at its box by default: on a fractional pixel position that shaved the edges.
+   */
+  svg { vertical-align: baseline; overflow: visible; }
 </style>

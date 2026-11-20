@@ -1,6 +1,7 @@
 # Ligature: app + compiler (PLAN section 3 and 6). Run from the repository root:
 #   LIGATURE_ORIGIN=https://latex.example.org docker compose -f docker/compose.yaml up -d --build
-# Put Caddy (or another TLS proxy with WebSocket support) in front of 127.0.0.1:3000.
+# Then add it to your TLS reverse proxy (WebSocket support required) on 127.0.0.1:3000: docker/README.md step 5
+# (docker/Caddyfile.example, docker/nginx.example.conf).
 # There is deliberately no docker.sock, Redis or database container anywhere.
 # The images are built on the host from this checkout (`--build`); there is no registry to pull them from.
 name: ligature
@@ -27,7 +28,7 @@ services:
       COMPILER_URL: unix:/run/ligature/compiler.sock
       ALLOWED_ORIGINS: ${LIGATURE_ORIGIN:?set LIGATURE_ORIGIN to the public URL, e.g. https://latex.example.org}
       # 1 = rate limits use the first X-Forwarded-For hop. Only behind a proxy that overwrites that header
-      # (Caddy does for untrusted clients); the app port is bound to 127.0.0.1 so nothing else can set it.
+      # (docker/Caddyfile.example and nginx.example.conf set it to the client's address); the app port is bound to 127.0.0.1 so nothing else can set it.
       # docker/.env.example sets it to 1; the default here stays 0 for a stack run without a proxy.
       TRUST_PROXY: ${LIGATURE_TRUST_PROXY:-0}
       # Deleted files stay in the project's trash can this many days, then are purged automatically.
