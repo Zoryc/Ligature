@@ -4,6 +4,7 @@ import { tryBiber, tryBibtex } from './bibtex.ts'
 import { diag, isErrorStart, type Ctx, type Recogniser } from './context.ts'
 import { tryError } from './errors.ts'
 import { FileStack } from './fileStack.ts'
+import { TRACEBACK, tryLuaError } from './lua.ts'
 import { projectPathMapper } from './paths.ts'
 import { MAX_DIAGNOSTICS, type ParsedDiagnostic, type ParseOptions } from './types.ts'
 import { tryEngineWarning, tryLatexWarning } from './warnings.ts'
@@ -13,6 +14,28 @@ const RUN_START_RE = /^This is (?:pdfTeX|XeTeX|LuaTeX|LuaHBTeX|e-TeX|eTeX|TeX|Bi
 
 /** Lines that are never TeX output and never touch the file stack. */
 const NOISE_RE = /^(?:Latexmk: |Running '|Rule '|Run number \d+ of rule|-{6,}$|Collected error summary|For rule '|Initial Win CP|I changed them all to|Reverting Windows console)/
+
+/** Marker lines the compiler worker puts around the end of latexmk's console (apps/compiler/src/logTail.ts). */
+const CONSOLE_TAIL_START_RE = /^==== Ligature: .*latexmk console follows ====$/
+const CONSOLE_TAIL_END_RE = /^==== Ligature: end of the latexmk console ====$/
+
+/**
+ * The end of latexmk's console, appended by the compiler worker to a failed build's log that shows no error.
+ * It may begin in the middle of an engine run (its open files unknown), and the TeX warnings and bad boxes
+ * in it are the last run's (already reported from its log) or older runs' (stale). So it starts a fresh file
+ * stack, and inside it only errors and BibTeX/Biber messages are reported (Ctx.emit).
+ */
+const tryConsoleTail: Recogniser = (ctx, i) => {
+  const line = ctx.lines[i]!
+  const start = CONSOLE_TAIL_START_RE.test(line)
+  if (!start && !CONSOLE_TAIL_END_RE.test(line)) return 0
+  ctx.inConsoleTail = start
+  ctx.inBibtex = false
+  ctx.stack.reset()
+  return 1
+}
+
+const countsInConsoleTail = (d: ParsedDiagnostic) => d.severity === 'error' || d.kind === 'biber' || d.kind === 'bibtex'
 
 /** Notes the compiler worker appends ("[ligature: compile timed out after 60000 ms; process group killed]"). */
 const tryCompilerNote: Recogniser = (ctx, i) => {
@@ -54,18 +77,22 @@ const tryRunStart: Recogniser = (ctx, i) => {
  * the common line that is none of these costs a few comparisons rather than a dozen regex runs.
  */
 const RECOGNISERS: { first: string; r: Recogniser }[] = [
+  { first: '=', r: tryConsoleTail },
   { first: 'TLR-CFI', r: tryRunStart },
   { first: '[', r: tryCompilerNote },
+  { first: '', r: tryLuaError }, // only lines followed by "stack traceback:" (before tryError: "x.lua:3: ...")
   { first: '!', r: tryError }, // also any line with a ':' (file:line: errors)
   { first: 'LPC', r: tryLatexWarning },
   { first: 'OUTL', r: tryBadBox },
   { first: 'pPxXlLdDwNM', r: tryEngineWarning },
   { first: 'TDW', r: tryBibtex }, // also inside BibTeX output and on lines with '---'
-  { first: 'WE[', r: tryBiber },
+  { first: 'WEIB[', r: tryBiber },
   { first: 'R', r: tryRunaway },
 ]
-const ERROR_BIT = 1 << 2
-const BIBTEX_BIT = 1 << 6
+const bitOf = (r: Recogniser): number => 1 << RECOGNISERS.findIndex(x => x.r === r)
+const LUA_BIT = bitOf(tryLuaError)
+const ERROR_BIT = bitOf(tryError)
+const BIBTEX_BIT = bitOf(tryBibtex)
 
 /** For each ASCII first character, the recognisers (bit k = RECOGNISERS[k]) that can match. */
 const BY_FIRST_CHAR = new Uint16Array(128)
@@ -94,8 +121,12 @@ export function parseLatexLog(log: string, opts: ParseOptions = {}): ParsedDiagn
     stack: new FileStack(projectPathMapper(opts.rootDir)),
     inBibtex: false,
     bibDatabases: [],
+    biberSource: null,
+    biberCopies: new Map(),
+    inConsoleTail: false,
     fatalSummary: null,
     emit(d) {
+      if (ctx.inConsoleTail && !countsInConsoleTail(d)) return
       const k = key(d)
       if (seen.has(k)) return
       // Enough of this severity to fill the cap on its own: later ones can never be returned.
@@ -114,6 +145,7 @@ export function parseLatexLog(log: string, opts: ParseOptions = {}): ParsedDiagn
     }
     const c = line.charCodeAt(0)
     let mask = c < 128 ? BY_FIRST_CHAR[c]! : 0
+    if (ctx.lines[i + 1] === TRACEBACK) mask |= LUA_BIT
     if (line.indexOf(':') > 0) mask |= ERROR_BIT
     if (ctx.inBibtex || line.includes('---')) mask |= BIBTEX_BIT
     let used = 0

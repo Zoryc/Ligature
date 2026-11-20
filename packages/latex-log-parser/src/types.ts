@@ -6,7 +6,7 @@ export interface ParsedDiagnostic {
   severity: DiagnosticSeverity
   /**
    * 'tex' (TeX primitive errors, emergency stop, no output), 'latex', 'package:<name>', 'class:<name>', 'font',
-   * 'badbox', 'undefined-reference', 'undefined-citation', 'missing-file', 'bibtex', 'biber', 'compiler'
+   * 'badbox', 'undefined-reference', 'undefined-citation', 'missing-file', 'bibtex', 'biber', 'lua' (LuaTeX Lua errors), 'compiler'
    */
   kind: string
   message: string

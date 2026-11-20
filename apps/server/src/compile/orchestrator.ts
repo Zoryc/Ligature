@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as Y from 'yjs'
-import { ENGINES, fileDocName, isValidRelPath, type BuildResult, type Diagnostic, type Engine, type Manifest } from '@ligature/shared'
+import { ENGINES, fileDocName, isValidRelPath, type BuildResult, type CompileStatus, type Diagnostic, type Engine, type Manifest } from '@ligature/shared'
 import type { DB } from '../db/index.ts'
 import type { Collab } from '../collab/collab.ts'
 import type { DocStore } from '../collab/docStore.ts'
@@ -56,6 +56,33 @@ export const DEFAULT_MAX_COMPILE_QUEUE = 20
 export const DEFAULT_MAX_COMPILE_QUEUE_PER_USER = 3
 
 const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex')
+
+export const BUILD_FAILED_MESSAGE = 'The build failed: see the raw log (latexmk, biber or bibtex reported the problem).'
+/**
+ * A TeX error ("! ...") or a Biber error ("ERROR - ...", maybe behind "[123] Biber.pm:456> ") in the log. A fatal
+ * error TeX writes to stderr ("! Unable to read an entire line---bufsize=200000.") may continue the console line
+ * of the files it had opened: "(./main.tex (/x/article.cls))! Unable ...".
+ */
+const FAILURE_LINE_RES = [/^(?:[^\n]*?\))?! +(\S.*)$/m, /^(?:\[\d+\] [\w.]+:\d+> )?ERROR - (\S.*)$/m]
+const FAILURE_LINE_MAX = 300
+
+/**
+ * A failed build must say why. When the parsed log has no error (the problem was only reported by latexmk,
+ * biber or bibtex on the console, which the compiler appends to such a log), add one: the first "!" or
+ * biber ERROR line of the log when there is one, else a pointer to the raw log. Null when not needed.
+ */
+export function buildFailureDiagnostic(status: CompileStatus, log: string, diagnostics: Diagnostic[]): Diagnostic | null {
+  if (status === 'success' || diagnostics.some(d => d.severity === 'error')) return null
+  let message = BUILD_FAILED_MESSAGE
+  for (const re of FAILURE_LINE_RES) {
+    const m = re.exec(log)
+    if (!m) continue
+    const line = m[1]!.trim()
+    message = `The build failed: ${line.length > FAILURE_LINE_MAX ? `${line.slice(0, FAILURE_LINE_MAX - 1)}…` : line}`
+    break
+  }
+  return { severity: 'error', kind: 'build', message }
+}
 
 /** Simple counting semaphore. */
 class Semaphore {
@@ -233,7 +260,9 @@ export class CompileOrchestrator {
       }
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'output.log'), log)
-      const diagnostics = mergeDiagnostics(extra, computeDiagnostics({ log, paths: snap.paths, projectId }))
+      let diagnostics = mergeDiagnostics(extra, computeDiagnostics({ log, paths: snap.paths, projectId }))
+      const failed = buildFailureDiagnostic(status, log, diagnostics)
+      if (failed) diagnostics = mergeDiagnostics([failed], diagnostics)
       const record: BuildRecord = {
         buildId, status, durationMs, log, hasPdf, diagnostics, startedBy: by.displayName,
         snapshot: { treeVersion: snap.treeVersion, docs: snap.stateVectors, docSnapshots: snap.docSnapshots },

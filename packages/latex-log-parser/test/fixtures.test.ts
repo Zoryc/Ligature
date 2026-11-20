@@ -177,6 +177,20 @@ describe.each(ENGINES)('fixtures: semantics (%s)', engine => {
     }
   })
 
+  it('lua: Lua errors at the \\directlua line, or at the line of a project .lua file; nothing without LuaTeX', () => {
+    if (engine !== 'lualatex') {
+      expect(brief('lua', log)).toEqual([]) // the \directlua calls are skipped; graphicx alone says nothing
+      return
+    }
+    expect(brief('lua', log)).toEqual([
+      { severity: 'error', kind: 'lua', message: 'boom from directlua', path: 'main.tex', line: 6 },
+      { severity: 'error', kind: 'lua', message: "attempt to index a nil value (local 't')", path: 'main.tex', line: 8 },
+      { severity: 'error', kind: 'lua', message: 'inline:1: attempt to perform arithmetic on a table value', path: 'main.tex', line: 10 },
+      { severity: 'error', kind: 'lua', message: '[string "return nil .. \'x\'"]:1: attempt to concatenate a nil value', path: 'main.tex', line: 12 },
+      { severity: 'error', kind: 'lua', message: "attempt to index a nil value (local 'cfg')", path: 'helper.lua', line: 3 },
+    ])
+  })
+
   it('bibtex warnings with natbib, .bib in a sub-folder', () => {
     expect(brief('bibtex-warn', log)).toEqual([
       { severity: 'warning', kind: 'undefined-citation', message: "Citation `missingkey' on page 1 undefined.", path: 'main.tex', line: 6 },

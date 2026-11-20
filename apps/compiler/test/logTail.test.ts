@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { capTail, fitUtf8Tail, readTail, TailBuffer } from '../src/logTail.ts'
+import { capTail, CONSOLE_TAIL_END, CONSOLE_TAIL_START, fitUtf8Tail, readTail, reportedLog, TailBuffer } from '../src/logTail.ts'
 
 const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${String(i).padStart(6, '0')}\n`).join('')
 
@@ -75,5 +75,40 @@ describe('log tail cap', () => {
     small.push(Buffer.from('a'))
     small.push(Buffer.from('b'))
     expect(small.text()).toBe('ab')
+  })
+})
+
+describe('reported log', () => {
+  const TEX_LOG = '(./main.tex\nLaTeX Warning: There were undefined references.\n)\n'
+  const CONSOLE = 'Latexmk: applying rule biber\nERROR - BibTeX subsystem: refs.bib_1.utf8, line 3, syntax error\n'
+
+  it('without out/output.log the console is the log', () => {
+    expect(reportedLog(null, CONSOLE, true, 1000)).toBe(CONSOLE)
+  })
+
+  it('a successful build, or a failed one whose TeX log shows an error, reports the TeX log alone', () => {
+    expect(reportedLog(TEX_LOG, CONSOLE, false, 1000)).toBe(TEX_LOG)
+    for (const err of ['! Undefined control sequence.', './main.tex:4: Undefined control sequence.',
+      'chapters/a b.tex:12: LaTeX Error: x', '[\\directlua]:1: boom\nstack traceback:']) {
+      const log = `${TEX_LOG}${err}\n`
+      expect(reportedLog(log, CONSOLE, true, 1000)).toBe(log)
+    }
+  })
+
+  it('a failed build whose TeX log shows no error gets the console between marker lines', () => {
+    const out = reportedLog(TEX_LOG.trimEnd(), CONSOLE, true, 1000)
+    expect(out).toBe(`${TEX_LOG}${CONSOLE_TAIL_START}\n${CONSOLE}${CONSOLE_TAIL_END}\n`)
+    // an indented "x.tex:1: " or a word with a colon is not an error line
+    expect(reportedLog(`${TEX_LOG}  ./a.tex:1: x\nNote: 1: y\n`, CONSOLE, true, 1000)).toContain(CONSOLE_TAIL_START)
+    expect(reportedLog(TEX_LOG, '  \n', true, 1000)).toBe(TEX_LOG) // nothing to add
+  })
+
+  it('only the tail of a long console, from a whole line, within the cap', () => {
+    const console = lines(10_000)
+    const out = reportedLog(TEX_LOG, console, true, 4096)
+    const tail = out.slice(out.indexOf(CONSOLE_TAIL_START) + CONSOLE_TAIL_START.length + 1, out.indexOf(CONSOLE_TAIL_END))
+    expect(Buffer.byteLength(tail)).toBeLessThanOrEqual(4096)
+    expect(tail.split('\n')[0]).toMatch(/^line \d{6}$/)
+    expect(tail.endsWith('line 009999\n')).toBe(true)
   })
 })

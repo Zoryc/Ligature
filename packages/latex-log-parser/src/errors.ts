@@ -38,10 +38,10 @@ interface Context {
 
 /**
  * Find the error context starting at `from`: lines up to `l.<n>` (or `<*>` when TeX was reading the command
- * line) and the line after it. Stops at the next error. Null if there is none.
+ * line) and the line after it. Stops at the next error, or at `stop`. Null if there is none.
  */
-export function scanContext(lines: string[], from: number): Context | null {
-  const limit = Math.min(lines.length, from + CONTEXT_WINDOW)
+export function scanContext(lines: string[], from: number, stop = lines.length): Context | null {
+  const limit = Math.min(lines.length, stop, from + CONTEXT_WINDOW)
   for (let k = from; k < limit; k++) {
     const l = lines[k]!
     if (k > from && isErrorStart(l)) return null
@@ -66,7 +66,7 @@ export function scanContext(lines: string[], from: number): Context | null {
 }
 
 /** Skip help text after the context: up to the next empty line. Returns the index of that empty line. */
-function skipHelp(lines: string[], from: number, l3: boolean): number {
+export function skipHelp(lines: string[], from: number, l3: boolean): number {
   let k = from
   // LaTeX3 (expl3) errors print an empty line before their help text.
   if (l3 && k + 1 < lines.length && lines[k] === '' && lines[k + 1] !== '' && !isErrorStart(lines[k + 1]!)) k++

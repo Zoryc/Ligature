@@ -91,6 +91,19 @@ describe('docker/Dockerfile.app', () => {
 
   it('ships every workspace package the server imports at runtime', () => {
     const dockerfile = read('docker/Dockerfile.app')
-    expect(dockerfile).toMatch(/^COPY --from=build \/src\/packages packages$/m)
+    expect(dockerfile).toMatch(/^COPY --from=server-deps \/src\/packages packages$/m)
+  })
+
+  it('installs only the server production dependencies in the image the app runs from', () => {
+    // The final stage copies node_modules from server-deps, never from build (which has the web toolchain).
+    const dockerfile = read('docker/Dockerfile.app')
+    expect(dockerfile).toMatch(/^RUN npm ci --omit=dev -w @ligature\/server /m)
+    expect(dockerfile).toMatch(/^COPY --from=server-deps \/src\/node_modules node_modules$/m)
+    expect(dockerfile).not.toMatch(/^COPY --from=build \/src\/node_modules/m)
+  })
+
+  it('tsx and ws, which the server needs at runtime, are production dependencies', () => {
+    const pkg = JSON.parse(read('apps/server/package.json'))
+    for (const name of ['tsx', 'ws']) expect(pkg.dependencies, name).toHaveProperty(name)
   })
 })

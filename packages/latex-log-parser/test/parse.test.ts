@@ -218,6 +218,55 @@ describe('messages', () => {
     const log = '[ligature: log truncated, showing the last 10 of 20 bytes]\n[ligature: compile timed out after 60000 ms; process group killed]\n'
     expect(brief(log)).toEqual([{ severity: 'error', kind: 'compiler', message: 'compile timed out after 60000 ms; process group killed' }])
   })
+
+  it('epstopdf\'s "Shell escape feature is not enabled" is info; other epstopdf warnings stay warnings', () => {
+    const log = ['(./main.tex', `(${SYS}/epstopdf-pkg/epstopdf-base.sty`, '',
+      'Package epstopdf Warning: Shell escape feature is not enabled.', '', ')',
+      'Package epstopdf Warning: Drivers other than `pdftex\' and `luatex\' are not supported.', '', ')'].join('\n')
+    expect(brief(log)).toEqual([
+      { severity: 'warning', kind: 'package:epstopdf', message: 'Drivers other than `pdftex\' and `luatex\' are not supported.', path: 'main.tex' },
+      { severity: 'info', kind: 'package:epstopdf', message: 'Shell escape feature is not enabled.', path: 'main.tex' },
+    ])
+  })
+})
+
+describe('LuaTeX Lua errors', () => {
+  const HELP = ['The lua interpreter ran into a problem, so the', 'remainder of this lua chunk will be ignored.', '']
+
+  it('text before the message reaches the file stack; parentheses in the Lua message do not', () => {
+    const log = ['(./main.tex', `(${SYS}/x/x.sty`, // closed by the "))" in front of the message below
+      '(./chapters/intro.tex))[\\directlua]:1: bad argument #1 to \'f\' (number expected, got nil)', 'stack traceback:',
+      '\t[C]: in function \'f\'', '\t[\\directlua]:1: in main chunk.', 'l.3 \\directlua{f(nil)}', '', ...HELP,
+      '[string "x = ("]:1: unexpected symbol near <eof>', 'stack traceback:', '\t[C]: in ?',
+      'l.7 \\directlua{assert(load("x = ("))()}', '', ...HELP,
+      'LaTeX Warning: Reference `a\' on page 1 undefined on input line 9.', '', ')'].join('\n')
+    expect(brief(log)).toEqual([
+      { severity: 'error', kind: 'lua', message: 'bad argument #1 to \'f\' (number expected, got nil)', path: 'main.tex', line: 3 },
+      { severity: 'error', kind: 'lua', message: '[string "x = ("]:1: unexpected symbol near <eof>', path: 'main.tex', line: 7 },
+      { severity: 'warning', kind: 'undefined-reference', message: 'Reference `a\' on page 1 undefined.', path: 'main.tex', line: 9 },
+    ])
+  })
+
+  it('a project .lua file (also in a sub-folder) gets its own line; a TeX Live .lua file the TeX line', () => {
+    const log = ['(./main.tex', './lua/util.lua:12: attempt to call a nil value (global \'g\')', 'stack traceback:',
+      '\t./lua/util.lua:12: in main chunk', 'l.4 \\directlua{require("lua/util")}', '', ...HELP,
+      `${SYS}/../../luatex/pkg/pkg.lua:40: oops`, 'stack traceback:', '\t[C]: in ?', 'l.5 \\usepkgthing', '', ...HELP, ')'].join('\n')
+    expect(brief(log)).toEqual([
+      { severity: 'error', kind: 'lua', message: 'attempt to call a nil value (global \'g\')', path: 'lua/util.lua', line: 12 },
+      { severity: 'error', kind: 'lua', message: `${SYS}/../../luatex/pkg/pkg.lua:40: oops`, path: 'main.tex', line: 5 },
+    ])
+  })
+
+  it('without a chunk name or a context line it still is one error, and the traceback is consumed', () => {
+    const log = ['(./main.tex', '(error object is a table value)', 'stack traceback:', '\t[C]: in ?', '\t(x.tex',
+      // the next error's context is not taken for the first one's
+      '[\\directlua]:1: second', 'stack traceback:', '\t[C]: in ?', '<argument> \\directlua {error("second")}', '',
+      'l.9 \\mymacro', '', ...HELP, ')'].join('\n')
+    expect(brief(log)).toEqual([
+      { severity: 'error', kind: 'lua', message: '(error object is a table value)', path: 'main.tex' },
+      { severity: 'error', kind: 'lua', message: 'second', path: 'main.tex', line: 9 },
+    ])
+  })
 })
 
 describe('BibTeX and Biber', () => {
@@ -251,6 +300,64 @@ describe('BibTeX and Biber', () => {
       { severity: 'warning', kind: 'biber', message: 'I didn\'t find a database entry for \'missing\' (section 0)' },
       { severity: 'warning', kind: 'biber', message: 'Datamodel: article entry \'x\' (refs.bib): Missing mandatory field \'journaltitle\'', path: 'refs.bib' },
     ])
+  })
+
+  it('Biber 2.2x: the hashed temporary copy is named after the data source; latexmk\'s repetition is deduplicated', () => {
+    // As printed in the compiler image (Biber 2.22 under latexmk), with the build's paths shortened.
+    const tmp = '/builds/p/.tmp/biber_tmp_eiXy/8fe4c9854184545302f21ebf0d47516c_234.utf8'
+    const log = ['INFO - This is Biber 2.22', 'INFO - Logfile is \'/builds/p/out/output.blg\'', 'INFO - Found BibTeX data source \'bib/refs.bib\'',
+      `ERROR - BibTeX subsystem: ${tmp}, line 6, syntax error: at end of input, expected end of entry ("}" or ")") (skipping to next "@")`,
+      `WARN - BibTeX subsystem: ${tmp}, line 3, warning: possible runaway string started at line 2`, 'INFO - ERRORS: 1',
+      `Biber error: [124] Utils.pm:480> ERROR - BibTeX subsystem: ${tmp}, line 6, syntax error: at end of input, expected end of entry ("}" or ")") (skipping to next "@")`,
+      `Biber warning: [124] Biber.pm:132> WARN - BibTeX subsystem: ${tmp}, line 3, warning: possible runaway string started at line 2`].join('\n')
+    expect(brief(log, '/builds/p/src')).toEqual([
+      { severity: 'error', kind: 'biber', message: 'BibTeX subsystem: bib/refs.bib, line 6, syntax error: at end of input, expected end of entry ("}" or ")") (skipping to next "@")', path: 'bib/refs.bib', line: 6 },
+      { severity: 'warning', kind: 'biber', message: 'BibTeX subsystem: bib/refs.bib, line 3, warning: possible runaway string started at line 2', path: 'bib/refs.bib', line: 3 },
+    ])
+  })
+
+  it('Biber 2.2x with several data sources: latexmk\'s late repetition keeps the source the copy belongs to', () => {
+    // Biber announces b.bib after reporting a.bib's error; latexmk repeats the error after biber is done.
+    const tmpA = '/builds/p/.tmp/biber_tmp_eiXy/0a1b2c3d4e5f60718293a4b5c6d7e8f9_234.utf8'
+    const tmpB = '/builds/p/.tmp/biber_tmp_eiXy/f9e8d7c6b5a4938271605f4e3d2c1b0a_234.utf8'
+    const error = (tmp: string, line: number) => `BibTeX subsystem: ${tmp}, line ${line}, syntax error: at end of input, expected end of entry`
+    const log = ['INFO - This is Biber 2.22', 'INFO - Found BibTeX data source \'a.bib\'', `ERROR - ${error(tmpA, 6)}`,
+      'INFO - Found BibTeX data source \'b.bib\'', `ERROR - ${error(tmpB, 2)}`, 'INFO - ERRORS: 2',
+      `Biber error: [124] Utils.pm:480> ERROR - ${error(tmpA, 6)}`, `Biber error: [124] Utils.pm:480> ERROR - ${error(tmpB, 2)}`].join('\n')
+    expect(brief(log, '/builds/p/src')).toEqual([
+      { severity: 'error', kind: 'biber', message: 'BibTeX subsystem: a.bib, line 6, syntax error: at end of input, expected end of entry', path: 'a.bib', line: 6 },
+      { severity: 'error', kind: 'biber', message: 'BibTeX subsystem: b.bib, line 2, syntax error: at end of input, expected end of entry', path: 'b.bib', line: 2 },
+    ])
+  })
+})
+
+describe('the end of latexmk\'s console appended by the compiler', () => {
+  const START = '==== Ligature: the TeX log above shows no error; the end of the latexmk console follows ===='
+  const END = '==== Ligature: end of the latexmk console ===='
+
+  it('a tail that starts in the middle of a run repeats no warnings or bad boxes (the TeX log has them, located)', () => {
+    const texLog = ['This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026)', '(./main.tex', '(./chapters/one.tex',
+      'LaTeX Warning: Reference `nowhere\' on page 1 undefined on input line 4.', ')',
+      'LaTeX Warning: Reference `alsonowhere\' on page 3 undefined on input line 13.', ')', 'Output written on output.pdf (3 pages).']
+    // Cut after "(./chapters/one.tex": its ")" closes main.tex in the parser's eyes; an older run's warning too.
+    const tail = ['LaTeX Warning: Reference `nowhere\' on page 1 undefined on input line 4.', ')',
+      'LaTeX Warning: Reference `alsonowhere\' on page 3 undefined on input line 13.', ')',
+      'Overfull \\hbox (1pt too wide) in paragraph at lines 7--8', '', 'LaTeX Warning: Stale warning of an earlier run.',
+      'Latexmk: applying rule \'biber output\'...', 'INFO - Found BibTeX data source \'refs.bib\'',
+      'WARN - Datamodel: article entry \'x\' (refs.bib): Missing mandatory field \'journaltitle\'',
+      '[123] Utils.pm:411> ERROR - BibTeX subsystem: /tmp/biber_tmp_ab/refs.bib_9999.utf8, line 15, syntax error']
+    const d = brief([...texLog, START, ...tail, END, ''].join('\n'))
+    expect(d).toEqual([
+      { severity: 'error', kind: 'biber', message: 'BibTeX subsystem: /tmp/biber_tmp_ab/refs.bib_9999.utf8, line 15, syntax error', path: 'refs.bib', line: 15 },
+      { severity: 'warning', kind: 'undefined-reference', message: 'Reference `nowhere\' on page 1 undefined.', path: 'chapters/one.tex', line: 4 },
+      { severity: 'warning', kind: 'undefined-reference', message: 'Reference `alsonowhere\' on page 3 undefined.', path: 'main.tex', line: 13 },
+      { severity: 'warning', kind: 'biber', message: 'Datamodel: article entry \'x\' (refs.bib): Missing mandatory field \'journaltitle\'', path: 'refs.bib' },
+    ])
+  })
+
+  it('after the end marker, lines count again', () => {
+    const d = brief([START, 'LaTeX Warning: Inside.', END, 'LaTeX Warning: Outside.', ''].join('\n'))
+    expect(d.map(x => x.message)).toEqual(['Outside.'])
   })
 })
 

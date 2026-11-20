@@ -10,6 +10,11 @@ export const MAX_SYNCTEX_BYTES = 100 * MB
 export const MAX_LOG_BYTES = 2 * MB
 /** latexmk stdout/stderr kept as a fallback log when out/output.log is missing. */
 export const MAX_CONSOLE_BYTES = 256 * 1024
+/**
+ * End of latexmk's console appended to a failed build's log that shows no error (biber, bibtex, fatal web2c
+ * errors only reach the terminal). Must fit, with the notes, in MAX_REPORTED_LOG_BYTES - MAX_LOG_BYTES.
+ */
+export const MAX_CONSOLE_TAIL_BYTES = 32 * 1024
 
 export const DEFAULT_TIMEOUT_MS = 90_000
 export const MIN_TIMEOUT_MS = 1_000

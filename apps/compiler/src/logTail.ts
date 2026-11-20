@@ -66,6 +66,35 @@ export async function readTail(path: string, max: number): Promise<string | null
   }
 }
 
+/**
+ * An error TeX writes to its log: "! ...", a file-line-error "x.tex:12: ...", or a LuaTeX Lua error (traceback).
+ * Line-anchored and linear: run once per failed build on at most MAX_LOG_BYTES.
+ */
+const TEX_LOG_ERROR_RE = /^(?:! |\S[^:\n]*\.[A-Za-z][\w-]{0,9}:\d+: |stack traceback:$)/m
+
+/**
+ * The log parser recognises these two lines (packages/latex-log-parser/src/parse.ts, CONSOLE_TAIL_*_RE): between
+ * them it starts a fresh file stack and reports only errors and BibTeX/Biber messages, since the tail may begin
+ * in the middle of an engine run. Change them together.
+ */
+export const CONSOLE_TAIL_START ='==== Ligature: the TeX log above shows no error; the end of the latexmk console follows ===='
+export const CONSOLE_TAIL_END = '==== Ligature: end of the latexmk console ===='
+
+/**
+ * The log reported for a build. Normally TeX's own log (out/output.log), else latexmk's console. When the build
+ * failed and the TeX log shows no error, the problem was only printed to the terminal (a biber or bibtex
+ * failure, a fatal "! Unable to read an entire line"): the console's last `maxTail` bytes are appended,
+ * between marker lines, so the log parser can find it and the user can read it.
+ */
+export function reportedLog(fileLog: string | null, console: string, failed: boolean, maxTail: number): string {
+  if (fileLog === null) return console
+  if (!failed || console.trim() === '' || TEX_LOG_ERROR_RE.test(fileLog)) return fileLog
+  let tail = fitUtf8Tail(console, maxTail)
+  if (tail.length < console.length) tail = tail.slice(tail.indexOf('\n') + 1) // start on a whole line
+  const sep = fileLog === '' || fileLog.endsWith('\n') ? '' : '\n'
+  return `${fileLog}${sep}${CONSOLE_TAIL_START}\n${tail}${tail.endsWith('\n') ? '' : '\n'}${CONSOLE_TAIL_END}\n`
+}
+
 /** Bounded in-memory tail buffer for a process's stdout/stderr. */
 export class TailBuffer {
   private chunks: Buffer[] = []

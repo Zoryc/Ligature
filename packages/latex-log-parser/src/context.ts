@@ -11,6 +11,15 @@ export interface Ctx {
   inBibtex: boolean
   /** Database files BibTeX reported ("Database file #1: refs.bib"), as project paths (null: not a project file). */
   bibDatabases: (string | null)[]
+  /** The .bib Biber reported reading last ("INFO - Found BibTeX data source 'refs.bib'"), as Biber names it. */
+  biberSource: string | null
+  /** Biber 2.2x's temporary copies (hashed names) -> the data source each is a copy of, as first seen. */
+  biberCopies: Map<string, string>
+  /**
+   * Inside the end of latexmk's console the compiler appends to a log without errors (between its
+   * "==== Ligature: ..." marker lines): only errors and BibTeX/Biber messages count there.
+   */
+  inConsoleTail: boolean
   /** "==> Fatal error occurred": reported only when the log shows no other error (e.g. a truncated log). */
   fatalSummary: ParsedDiagnostic | null
 }

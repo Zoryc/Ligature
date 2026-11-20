@@ -52,9 +52,27 @@ RUN set -eux; \
     test "$(kpsewhich -var-value=openin_any)" = "p"; \
     test "$(kpsewhich -var-value=openout_any)" = "p"
 
+# Extra TeX Live packages: space-separated tlmgr package names, installed now because the compiler has no network
+# at run time. Mostly useful with the medium scheme (the full scheme has everything), e.g.
+#   docker build -f docker/Dockerfile.compiler --build-arg TEXLIVE_EXTRA_PACKAGES="tcolorbox fontawesome5" ...
+# This needs the network at build time and a TeX Live repository of the image's TeX Live year (tlmgr refuses a
+# newer one). Before the formats and font caches below, so that those include the new packages.
+ARG TEXLIVE_EXTRA_PACKAGES=""
+RUN set -eu; \
+    pkgs="$TEXLIVE_EXTRA_PACKAGES"; \
+    if [ -z "$(printf '%s' "$pkgs" | tr -d '[:space:]')" ]; then exit 0; fi; \
+    for p in $pkgs; do \
+      case "$p" in -*|*[!A-Za-z0-9._+-]*) echo "TEXLIVE_EXTRA_PACKAGES: not a package name: '$p'" >&2; exit 1;; esac; \
+    done; \
+    set -x; \
+    tlmgr update --self; \
+    tlmgr install $pkgs
+
 # Pre-generate formats and the LuaTeX font cache at build time: the root filesystem is read-only at runtime,
 # and without these the first LuaLaTeX/fontspec compile is very slow or fails. Caches go to TEXMFSYSVAR,
-# which every project uid can read; per-project additions go to the project's own TEXMFVAR.
+# which every project uid can read; per-project additions go to the project's own TEXMFVAR. luaotfload only
+# reads its font-names database from the first WRITABLE cache dir, i.e. the project's own: the helper copies
+# this one there before a project's first LuaLaTeX compile (apps/compiler/src/fontNames.ts).
 RUN set -eux; \
     fmtutil-sys --all > /tmp/fmtutil.log 2>&1 || (tail -n 50 /tmp/fmtutil.log; exit 1); \
     TEXMFVAR="$(kpsewhich -var-value=TEXMFSYSVAR)" luaotfload-tool --update --force; \

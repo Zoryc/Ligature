@@ -82,21 +82,61 @@ export const tryBibtex: Recogniser = (ctx, i) => {
   return 0
 }
 
-/** Biber: "WARN - ..." / "ERROR - ..." (optionally behind "[123] Biber.pm:456> "). */
+/**
+ * Biber: "WARN - ..." / "ERROR - ..." (optionally behind "[123] Biber.pm:456> "; latexmk repeats them behind
+ * "Biber error: " / "Biber warning: "), and the "INFO - Found BibTeX data source 'refs.bib'" line.
+ */
+const BIBER_RE = /^(?:Biber (?:error|warning): )?(?:\[\d+\] [\w.]+:\d+> )?(WARN|ERROR|INFO) - (.*)$/
+/** Biber 2.2x reads a UTF-8 copy of the .bib named "<TMPDIR>/biber_tmp_XXXX/<md5>_<pid>.utf8". */
+const BIBER_TMP_RE = /\S*biber_tmp_[^\s/\\]*[/\\][0-9a-f]+_\d+\.utf8/
+
+/**
+ * Biber 2.2x's temporary copy named in `text`, and the data source it is a copy of. Biber reads its sources
+ * one after another and reports a source's errors before announcing the next, so a copy belongs to the
+ * source current when it is first named. latexmk repeats the errors after biber has finished, when the
+ * current source is the last one: the repeat must keep the first answer.
+ */
+function biberCopy(ctx: Ctx, text: string): { tmp: string; source: string } | null {
+  const tmp = BIBER_TMP_RE.exec(text)?.[0]
+  if (tmp === undefined) return null
+  let source = ctx.biberCopies.get(tmp)
+  if (source === undefined) {
+    if (ctx.biberSource === null) return null
+    source = ctx.biberSource
+    ctx.biberCopies.set(tmp, source)
+  }
+  return { tmp, source }
+}
+
+function biberLocation(ctx: Ctx, text: string, copy: { source: string } | null): Location {
+  // Older biber: "BibTeX subsystem: /tmp/biber_tmp_x/refs.bib_123.utf8, line 15, ..." (only the base name).
+  const at = /([^\s'"/\\]+\.bib)(?:_\d+\.utf8)?, line (\d+)/.exec(text)
+  if (at) return { path: at[1]!, line: Number(at[2]) }
+  // Biber 2.2x: the copy has a hashed name.
+  const tmp = /\.utf8, line (\d+)/.exec(text)
+  if (tmp && copy !== null) {
+    const p = ctx.stack.project(copy.source)
+    if (p !== null) return { path: p, line: Number(tmp[1]) }
+  }
+  const entry = /\(([^\s'"/\\()]+\.bib)\)/.exec(text)
+  return entry ? { path: entry[1]! } : {}
+}
+
 export const tryBiber: Recogniser = (ctx, i) => {
   const line = ctx.lines[i]!
-  const m = /^(?:\[\d+\] [\w.]+:\d+> )?(WARN|ERROR) - (.*)$/.exec(line)
+  const m = BIBER_RE.exec(line)
   if (!m) return 0
-  const text = m[2]!.trim()
-  // "BibTeX subsystem: /tmp/biber_tmp_x/refs.bib_123.utf8, line 15, syntax error: ..." — biber copies the .bib,
-  // so only the base name is known.
-  const at = /([^\s'"/\\]+\.bib)(?:_\d+\.utf8)?, line (\d+)/.exec(text)
-  let loc: Location = {}
-  if (at) loc = { path: at[1]!, line: Number(at[2]) }
-  else {
-    const entry = /\(([^\s'"/\\()]+\.bib)\)/.exec(text)
-    if (entry) loc = { path: entry[1]! }
+  let text = m[2]!.trim()
+  if (m[1] === 'INFO') {
+    const src = /^Found BibTeX data source '(.+)'$/.exec(text)
+    if (!src) return 0 // other INFO lines are not messages
+    ctx.biberSource = src[1]!
+    return 1
   }
+  const copy = biberCopy(ctx, text)
+  const loc = biberLocation(ctx, text, copy)
+  // Name the user's file instead of biber's temporary copy of it.
+  if (copy !== null) text = text.replace(copy.tmp, () => copy.source) // a function: no `$` patterns in a file name
   ctx.emit(diag(m[1] === 'ERROR' ? 'error' : 'warning', 'biber', text, loc, line))
   return 1
 }

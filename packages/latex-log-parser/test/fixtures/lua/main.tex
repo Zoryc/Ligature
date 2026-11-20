@@ -1,0 +1,17 @@
+\documentclass{article}
+\usepackage{graphicx}
+\begin{document}
+Before.
+\ifdefined\directlua
+\directlua{error("boom from directlua")}
+
+\directlua{local t = nil; tex.print(t.field)}
+
+\directlua{assert(load("return 1 + {}", "=inline"))()}
+
+\directlua{assert(load("return nil .. 'x'"))()}
+
+\directlua{dofile("helper.lua")}
+\fi
+After (with a parenthesis.
+\end{document}

@@ -15,10 +15,11 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import type { CompileStatus, OutputName } from './contract.ts'
 import { QuotaWatch, type Quota } from './diskUsage.ts'
 import { openForWrite, openRegular } from './fsSafe.ts'
+import { seedFontNames, systemTexmfVar } from './fontNames.ts'
 import { HashCache } from './hashCache.ts'
 import { latexmkArgs, runCommand, texEnv } from './latexmk.ts'
-import { MAX_LOG_BYTES, MAX_PDF_BYTES, MAX_REPORTED_LOG_BYTES, MAX_SYNCTEX_BYTES } from './limits.ts'
-import { fitUtf8Tail, readTail } from './logTail.ts'
+import { MAX_CONSOLE_TAIL_BYTES, MAX_LOG_BYTES, MAX_PDF_BYTES, MAX_REPORTED_LOG_BYTES, MAX_SYNCTEX_BYTES } from './limits.ts'
+import { fitUtf8Tail, readTail, reportedLog } from './logTail.ts'
 import { applyRemovals, ensureLayout, ensureParents, layout, mirrorDirs, planSync, type Layout } from './materialize.ts'
 import { Channel, ProtocolError, type JobMsg, type OutputInfo } from './protocol.ts'
 
@@ -75,6 +76,15 @@ async function copyNoFollow(from: string, to: string): Promise<void> {
   }
 }
 
+/** Best effort (see fontNames.ts): without the copy LuaLaTeX still works, its first compile is only slower. */
+async function seedLuaFontNames(l: Layout, env: Record<string, string>): Promise<void> {
+  try {
+    await seedFontNames(l.texmfVar, () => systemTexmfVar(env))
+  } catch (e) {
+    process.stderr.write(`[helper] luaotfload names database not seeded: ${e instanceof Error ? e.message : String(e)}\n`)
+  }
+}
+
 interface FileStamp { mtimeMs: number; size: number }
 
 async function stamp(path: string): Promise<FileStamp | null> {
@@ -125,6 +135,8 @@ async function main(): Promise<void> {
     await wipeBuildFiles(l)
     await mirrorDirs(l.out, job.manifest)
   }
+  const env = texEnv(process.env, l)
+  if (job.engine === 'lualatex') await seedLuaFontNames(l, env)
 
   // 2. Build, checking the disk quota while it runs.
   const pdfPath = join(l.out, 'output.pdf')
@@ -147,7 +159,7 @@ async function main(): Promise<void> {
   const run = await runCommand({
     argv: [...job.limitPrefix, ...job.latexmk, ...latexmkArgs(job.engine, job.mainFile, l.out)],
     cwd: l.src,
-    env: texEnv(process.env, l),
+    env,
     timeoutMs: job.timeoutMs,
     signal: stop.signal,
   })
@@ -188,7 +200,7 @@ async function main(): Promise<void> {
   else if (run.spawnError !== null) { status = 'error'; notes.push(`[ligature: could not run latexmk: ${run.spawnError}]`) }
   else status = succeeded && hasPdf ? 'success' : 'failure'
 
-  let log = fileLog ?? run.console
+  let log = reportedLog(fileLog, run.console, status !== 'success', MAX_CONSOLE_TAIL_BYTES)
   if (notes.length) log = `${log}${log.endsWith('\n') || log === '' ? '' : '\n'}${notes.join('\n')}\n`
   // Decoding can grow the text (invalid UTF-8 bytes become 3-byte U+FFFD): cap the bytes actually sent.
   log = fitUtf8Tail(log, MAX_REPORTED_LOG_BYTES)

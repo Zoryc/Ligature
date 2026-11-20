@@ -1,0 +1,42 @@
+[
+  {
+    "severity": "error",
+    "kind": "lua",
+    "message": "boom from directlua",
+    "path": "main.tex",
+    "line": 6,
+    "raw": "))[\\directlua]:1: boom from directlua\nstack traceback:\n\t[C]: in function 'error'\n\t[\\directlua]:1: in main chunk.\nl.6 \\directlua{error(\"boom from directlua\")}"
+  },
+  {
+    "severity": "error",
+    "kind": "lua",
+    "message": "attempt to index a nil value (local 't')",
+    "path": "main.tex",
+    "line": 8,
+    "raw": "[\\directlua]:1: attempt to index a nil value (local 't')\nstack traceback:\n\t[\\directlua]:1: in main chunk.\nl.8 \\directlua{local t = nil; tex.print(t.field)}"
+  },
+  {
+    "severity": "error",
+    "kind": "lua",
+    "message": "inline:1: attempt to perform arithmetic on a table value",
+    "path": "main.tex",
+    "line": 10,
+    "raw": "inline:1: attempt to perform arithmetic on a table value\nstack traceback:\n\tinline:1: in main chunk\n\t[\\directlua]:1: in main chunk.\nl.10 \\directlua{assert(load(\"return 1 + {}\", \"=inline\"))()}"
+  },
+  {
+    "severity": "error",
+    "kind": "lua",
+    "message": "[string \"return nil .. 'x'\"]:1: attempt to concatenate a nil value",
+    "path": "main.tex",
+    "line": 12,
+    "raw": "[string \"return nil .. 'x'\"]:1: attempt to concatenate a nil value\nstack traceback:\n\t[string \"return nil .. 'x'\"]:1: in main chunk\n\t[\\directlua]:1: in main chunk.\nl.12 \\directlua{assert(load(\"return nil .. 'x'\"))()}"
+  },
+  {
+    "severity": "error",
+    "kind": "lua",
+    "message": "attempt to index a nil value (local 'cfg')",
+    "path": "helper.lua",
+    "line": 3,
+    "raw": "helper.lua:3: attempt to index a nil value (local 'cfg')\nstack traceback:\n\thelper.lua:3: in main chunk\n\t[C]: in function 'dofile'\n\t[\\directlua]:1: in main chunk.\nl.14 \\directlua{dofile(\"helper.lua\")}"
+  }
+]

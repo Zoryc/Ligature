@@ -162,11 +162,25 @@ describe('huge logs parse quickly', () => {
     ['bad boxes with endless contents', 'Overfull \\hbox (1pt too wide) in paragraph at lines 1--2\n[]\\x (\n'],
     ['bibtex lines', 'This is BibTeX\nx\n---line 1 of file a.bib\n'],
     ['context lookalikes', '! E.\n<argument> (\nl.1 (\n'],
+    // a Lua error scans ahead for its context like a TeX error
+    ['Lua errors without context', '))[string "(":1: x\nstack traceback:\n'],
+    ['Lua errors with context', 'a.lua:1: x\nstack traceback:\n\t[C]: in ?\nl.1 \\x\n\n'],
     ['empty lines', '\n'],
     ['CR only', 'a\r'],
   ])(`%s: < ${BUDGET_MS} ms`, (_name, chunk) => {
     const { ms, out } = timed(repeatTo(chunk, TWO_MB))
     checkShape(out)
+    expect(ms).toBeLessThan(BUDGET_MS)
+  })
+
+  it.each([
+    ['[string " openers', '[string "a'],
+    ['bare chunk names without a line number', ' a:b'],
+    [')-separated chunk name lookalikes', ')x.lua:'],
+  ])(`one 2 MB Lua error line of %s: < ${BUDGET_MS} ms`, (_name, chunk) => {
+    const { ms, out } = timed(`${repeatTo(chunk, TWO_MB)}\nstack traceback:\n`)
+    checkShape(out)
+    expect(out).toHaveLength(1)
     expect(ms).toBeLessThan(BUDGET_MS)
   })
 
