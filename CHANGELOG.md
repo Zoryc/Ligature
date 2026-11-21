@@ -36,6 +36,12 @@ preview of exactly what will happen.
   entries themselves); open tabs are logged out at once. The username can be used for a new account.
 - The last active admin cannot be deleted.
 
+**Problems panel:** epstopdf's "Shell escape feature is not enabled" is no longer shown. Shell escape is always
+off in Ligature, so it appeared for every document using graphicx (also through pgfplots or TikZ) as a problem
+on line 1, with nothing to fix.
+
+**README** rewritten for the public repository, with screenshots.
+
 ## 1.1.0 — 2026-11-20
 
 **Ligature no longer sets up a reverse proxy.** It runs on `127.0.0.1:3000` and you add it as one site to the

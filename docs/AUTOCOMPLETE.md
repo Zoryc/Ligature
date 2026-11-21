@@ -26,12 +26,12 @@ anything but `\` closes it, and accepting a command there leaves the rest of the
 
 ## Built-in lists (`apps/web/src/lib/latex/completionData.ts`)
 
-- `COMMANDS: CommandInfo[]` — about 400 common commands, written for Ligature (MIT; do not copy lists from
+- `COMMANDS: CommandInfo[]` — about 600 common commands, written for Ligature (MIT; do not copy lists from
   GPL/AGPL projects): LaTeX core (sectioning, text styles, references, floats, lists, spacing, verbatim-free
   basics), amsmath/amssymb (math structures, operators, arrows, relations, Greek letters, accents, delimiters),
   graphicx, hyperref, xcolor, siunitx, booktabs, cleveref, biblatex/natbib citation commands, tikz basics.
   Each with its arguments (`ArgSpec`, with a readable placeholder name), its package and a short `detail`.
-- `ENVIRONMENTS: EnvironmentInfo[]` — about 60: document structure, lists, floats (figure, table, with
+- `ENVIRONMENTS: EnvironmentInfo[]` — about 80: document structure, lists, floats (figure, table, with
   `[htbp]` as an optional arg), tabular/tabularx/longtable (column spec), math (equation, align, gather,
   multline, cases, matrices, split), theorem-like, minipage, center, quote, verbatim, lstlisting, tikzpicture,
   frame (beamer), abstract, thebibliography...
