@@ -6,6 +6,18 @@ the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compos
 
 ## Unreleased
 
+**Autocomplete** ([docs/AUTOCOMPLETE.md](docs/AUTOCOMPLETE.md)), all in the browser:
+- After `\`: about 600 common commands (with their package and a short description) and the project's own
+  `\newcommand`s; accepting inserts fields for the arguments (`\frac{numerator}{denominator}`, Tab to the
+  next). Math commands come first inside math, text commands outside it.
+- `\begin{`: about 80 environments, inserted with their `\end` (and `\item` for lists); `\end{` offers the
+  environment still open.
+- `\ref{` and friends: every label of the project, with what it labels and where; `\cite{` and friends: every
+  `.bib` key with author, year and title; `\input{`, `\includegraphics{`, `\usepackage{`, `\documentclass{`.
+- Never inside comments; Ctrl+Space opens it anywhere.
+- The project's texts are loaded once and shared with the Contents outline; the server now sends an ETag for
+  text files, so after a compile only changed files are downloaded again (the outline used to re-download all).
+
 **Delete an account** ([docs/ACCOUNT-DELETION.md](docs/ACCOUNT-DELETION.md)). Immediate and permanent, after a
 preview of exactly what will happen.
 - **Your own account** (Account page): confirmed with your password. Projects where you are the only member are

@@ -13,7 +13,9 @@
   } from '@codemirror/language'
   import { tags } from '@lezer/highlight'
   import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
-  import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+  import {
+    autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, type CompletionSource,
+  } from '@codemirror/autocomplete'
   import {
     forEachDiagnostic, lintGutter, lintKeymap, setDiagnostics, setDiagnosticsEffect, type Diagnostic as LintDiagnostic,
   } from '@codemirror/lint'
@@ -39,10 +41,13 @@
     onFix?: (fix: QuickFix) => void
     /** The main cursor moved (1-based line, 1-based column). */
     onCursor?: (line: number, column: number) => void
+    /** LaTeX suggestions (latex/latexCompletion.ts); read once when the editor is created. */
+    completion?: CompletionSource
   }
 
   let {
     ytext, awareness, undoManager, readOnly, diagnostics = [], fontSize = 14, wrap = true, explain, onFix, onCursor,
+    completion,
   }: Props = $props()
 
   let host: HTMLDivElement
@@ -252,7 +257,8 @@
       syntaxHighlighting(folioHighlight),
       bracketMatching(),
       closeBrackets(),
-      autocompletion(),
+      // Our LaTeX source replaces the language's (stex has none); the keymap below stays as it was.
+      autocompletion(completion ? { override: [completion], icons: false } : {}),
       rectangularSelection(),
       crosshairCursor(),
       highlightActiveLine(),
@@ -355,7 +361,14 @@
   .editor :global(.cm-diagnostic) { padding: 5px 10px; border-left-width: 3px; }
   .editor :global(.cm-diagnostic-error) { border-left-color: var(--red); }
   .editor :global(.cm-diagnostic-warning) { border-left-color: var(--amber-mark); }
+  .editor :global(.cm-tooltip-autocomplete > ul) { font-family: var(--font-mono); font-size: 12.5px; max-height: 16em; }
+  .editor :global(.cm-tooltip-autocomplete > ul > li) { padding: 2px 10px 2px 8px; }
+  .editor :global(.cm-completionMatchedText) { text-decoration: none; font-weight: 600; }
+  .editor :global(.cm-completionDetail) { font-family: var(--font-ui); font-style: normal; font-size: 11.5px; color: var(--ink-3); margin-left: 1.2em; }
+  .editor :global(.cm-completionInfo) { font-family: var(--font-ui); font-size: 12px; padding: 5px 9px; max-width: 360px; }
   .editor :global(.cm-tooltip-autocomplete > ul > li[aria-selected]) { background: var(--teal); color: #FFFFFF; }
+  .editor :global(.cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail) { color: rgba(255, 255, 255, 0.8); }
+  .editor :global(.cm-snippetField) { background: var(--teal-tint); outline: 1px dotted var(--teal-edge); }
   .editor :global(.cm-panels) { background: var(--paper); border-color: var(--rule); color: var(--ink); }
   .editor :global(.cm-panels input), .editor :global(.cm-panels button) { min-height: 24px; font-size: 12px; }
   .editor :global(.cm-searchMatch) { background: #F3E3A6; outline: 1px solid #D9B94F; }

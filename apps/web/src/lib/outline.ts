@@ -25,13 +25,16 @@ export interface OutlineEntry {
   unnumbered: boolean
 }
 
-/** Blank out comments (keeping line structure): `%` up to the end of the line, unless escaped. */
-function stripComments(text: string): string {
+/**
+ * Blank out comments (keeping line structure): `%` up to the end of the line, unless escaped.
+ * Shared with the autocomplete project index (latex/projectIndex.ts).
+ */
+export function stripComments(text: string): string {
   return text.replace(/(^|[^\\])%.*$/gm, '$1')
 }
 
 /** The balanced {...} group starting at `i` (text[i] === '{'); returns its content and the index after it. */
-function group(text: string, i: number): { content: string; end: number } | null {
+export function group(text: string, i: number): { content: string; end: number } | null {
   if (text[i] !== '{') return null
   let depth = 0
   for (let j = i; j < text.length; j++) {
@@ -43,6 +46,54 @@ function group(text: string, i: number): { content: string; end: number } | null
   return null
 }
 
+export interface Group { content: string; end: number }
+
+/** Argument lookups over one text, each O(1): see `groups`. */
+export interface Groups {
+  /** The balanced {...} group at `i`; null when there is none, it never closes, or its content is longer than `max`. */
+  brace(i: number, max?: number): Group | null
+  /** The [...] group at `i` (brackets count at its own brace level only); null like `brace`. */
+  bracket(i: number, max?: number): Group | null
+}
+
+/**
+ * Every `{` and `[` of `text` matched with its closer in one pass. Scanning forward from each command instead
+ * (like `group`) costs O(n) per unclosed group, so a file of a repeated unclosed `\label{` would take minutes
+ * to index; this keeps whole-file scans linear whatever the text.
+ */
+export function groups(text: string): Groups {
+  const close = new Int32Array(text.length).fill(-1)
+  const braces: number[] = []
+  // Open brackets per brace level: a `]` inside {...} does not close a `[` outside it.
+  const brackets: number[][] = [[]]
+  for (let j = 0; j < text.length; j++) {
+    const c = text[j]
+    if (c === '\\') j++
+    else if (c === '{') {
+      braces.push(j)
+      brackets.push([])
+    } else if (c === '}') {
+      const open = braces.pop()
+      if (open !== undefined) {
+        close[open] = j
+        brackets.pop()
+      }
+    } else if (c === '[') brackets[brackets.length - 1]?.push(j)
+    else if (c === ']') {
+      const open = brackets[brackets.length - 1]?.pop()
+      if (open !== undefined) close[open] = j
+    }
+  }
+  const at = (opener: string) => (i: number, max = Infinity): Group | null => {
+    const j = text[i] === opener ? close[i] ?? -1 : -1
+    return j === -1 || j - i - 1 > max ? null : { content: text.slice(i + 1, j), end: j + 1 }
+  }
+  return { brace: at('{'), bracket: at('[') }
+}
+
+/** Headings longer than this (in source characters) are cut: keeps the work per heading bounded. */
+const MAX_TITLE_SOURCE = 500
+
 const GREEK: Record<string, string> = {
   alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ',
   kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', phi: 'φ', varphi: 'φ',
@@ -52,7 +103,7 @@ const GREEK: Record<string, string> = {
 
 /** Readable text of a heading: drop markup, keep words (and Greek letters). */
 export function plainTitle(tex: string): string {
-  return tex
+  return tex.slice(0, MAX_TITLE_SOURCE)
     .replace(/\\([A-Za-z]+)(?![A-Za-z])/g, (all, name: string) => GREEK[name] ?? all)
     .replace(/\\(?:label|index|footnote|cite\w*|ref)\s*\{[^}]*\}/g, '')
     .replace(/\\(?:\\|newline|linebreak)(?:\[[^\]]*\])?/g, ' ')
@@ -68,26 +119,33 @@ export function plainTitle(tex: string): string {
 
 const COMMAND = /\\(part|chapter|section|subsection|subsubsection|paragraph|input|include|subfile|appendix|printbibliography|bibliography|begin\s*\{abstract\})(\*?)/g
 
+/** A function from a text offset to its 1-based line (binary search over the line starts). */
+export function lineLocator(text: string): (pos: number) => number {
+  const starts = [0]
+  for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1)
+  return (pos: number) => {
+    let lo = 0
+    let hi = starts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if ((starts[mid] ?? 0) <= pos) lo = mid
+      else hi = mid - 1
+    }
+    return lo + 1
+  }
+}
+
+/** Items read per file at most: no real file has more headings, and it bounds the work on a planted one. */
+const MAX_ITEMS = 5000
+
 /** Headings, inputs and special items of one file, in order (1-based lines). */
 export function scanSource(raw: string): SourceItem[] {
   const text = stripComments(raw)
   const out: SourceItem[] = []
-  const lineAt = (() => {
-    const starts = [0]
-    for (let i = 0; i < text.length; i++) if (text[i] === '\n') starts.push(i + 1)
-    return (pos: number) => {
-      let lo = 0
-      let hi = starts.length - 1
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1
-        if ((starts[mid] ?? 0) <= pos) lo = mid
-        else hi = mid - 1
-      }
-      return lo + 1
-    }
-  })()
+  const lineAt = lineLocator(text)
+  const args = groups(text)
   COMMAND.lastIndex = 0
-  for (let r = COMMAND.exec(text); r; r = COMMAND.exec(text)) {
+  for (let r = COMMAND.exec(text); r && out.length < MAX_ITEMS; r = COMMAND.exec(text)) {
     const name = r[1] ?? ''
     const starred = r[2] === '*'
     const line = lineAt(r.index)
@@ -99,17 +157,17 @@ export function scanSource(raw: string): SourceItem[] {
     if (name === 'printbibliography' || name === 'bibliography') { out.push({ type: 'special', title: 'References', line }); continue }
     while (text[i] === ' ' || text[i] === '\t' || text[i] === '\n') i++
     if (name === 'input' || name === 'include' || name === 'subfile') {
-      const g = group(text, i)
+      const g = args.brace(i, 1000)
       if (g && g.content.trim()) out.push({ type: 'input', path: g.content.trim(), line })
       continue
     }
     if (text[i] === '[') { // optional short title: skip it
-      const close = text.indexOf(']', i)
-      if (close === -1) continue
-      i = close + 1
+      const short = args.bracket(i)
+      if (!short) continue
+      i = short.end
       while (text[i] === ' ' || text[i] === '\t' || text[i] === '\n') i++
     }
-    const g = group(text, i)
+    const g = args.brace(i)
     if (!g) continue
     out.push({ type: 'heading', kind: name as HeadingKind, title: plainTitle(g.content) || '(untitled)', starred, line })
   }
@@ -210,7 +268,8 @@ export function resolveInput(path: string, mainDir: string, files: Map<string, {
   return null
 }
 
-function normalize(path: string): string {
+/** Resolve `.` and `..` segments and drop empty ones ("a/./b/../c" -> "a/c"). */
+export function normalize(path: string): string {
   const out: string[] = []
   for (const part of path.split('/')) {
     if (part === '' || part === '.') continue

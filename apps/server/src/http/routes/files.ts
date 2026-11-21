@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 import { Hono } from 'hono'
@@ -77,6 +78,10 @@ export function fileRoutes(deps: RouteDeps): Hono<Env> {
       const live = deps.collab.liveDoc(name)
       const text = live ? live.getText(TEXT_KEY).toString() : deps.store.storedText(name)?.text ?? ''
       const body = Buffer.from(text, 'utf8')
+      // Lets the project page's text loader revalidate cheaply (Cache-Control: no-cache already makes the
+      // browser ask every time): an unchanged file costs a 304 instead of its whole text.
+      headers.etag = textEtag(f.name, body)
+      if (etagMatches(c.req.header('if-none-match'), headers.etag)) return new Response(null, { status: 304, headers })
       headers['content-type'] = 'text/plain; charset=utf-8'
       headers['content-disposition'] = contentDisposition('attachment', f.name)
       headers['content-length'] = String(body.byteLength)
@@ -94,4 +99,28 @@ export function fileRoutes(deps: RouteDeps): Hono<Env> {
   })
 
   return app
+}
+
+/**
+ * Strong ETag of a text file's download. The name is hashed too because a 304 keeps the cached
+ * Content-Disposition: after a rename the client must get the new filename, not the old one.
+ */
+function textEtag(name: string, body: Buffer): string {
+  const h = createHash('sha256').update(name, 'utf8').update('\0').update(body).digest('hex')
+  return `"${h.slice(0, 32)}"`
+}
+
+/**
+ * If-None-Match uses the weak comparison (RFC 9110 13.1.2): `W/` prefixes are ignored and only the opaque
+ * tags are compared. `*` matches any existing representation. Unparseable parts never match.
+ */
+export function etagMatches(header: string | undefined, etag: string): boolean {
+  if (!header) return false
+  if (header.trim() === '*') return true
+  const want = etag.replace(/^W\//, '')
+  // Entity tags may themselves contain commas, so pick quoted tags out instead of splitting on ','.
+  for (const m of header.matchAll(/(?:W\/)?("[^"]*")/g)) {
+    if (m[1] === want) return true
+  }
+  return false
 }

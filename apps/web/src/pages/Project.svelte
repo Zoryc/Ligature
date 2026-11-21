@@ -47,6 +47,9 @@
   import { prefs, setPref } from '../lib/prefs.svelte.ts'
   import { explain, usepackageInsertion, type QuickFix } from '../lib/explain.ts'
   import { buildOutline, entryMarks, resolveInput, type OutlineEntry } from '../lib/outline.ts'
+  import { ProjectTexts } from '../lib/projectTexts.ts'
+  import { ProjectIndex } from '../lib/latex/projectIndex.ts'
+  import { latexCompletion } from '../lib/latex/latexCompletion.ts'
   import { agoText } from '../lib/trash.ts'
 
   interface Props { id: string; me: Me }
@@ -130,11 +133,26 @@
   let cursorPos = $state<{ line: number; column: number } | null>(null)
   /** A package to add to the main file once it is open in the editor (quick fix). */
   let pendingFix: QuickFix | null = null
-  /** Texts of the .tex files for the outline (the open file uses its live text). */
-  let outlineTexts = new Map<string, string>()
   /** Bumped when outline inputs change (texts loaded, open file edited, diagnostics replaced). */
   let outlineTick = $state(0)
   let outlineLoading = $state(false)
+
+  // Source texts (.tex, .bib, .sty, .cls), shared by the Contents outline and the autocomplete index.
+  const texts = new ProjectTexts({
+    fetch: fid => fetchText(rawFileUrl(id, fid)),
+    live: () => (file && fileReady ? { fileId: file.fileId, text: () => file?.ytext.toString() ?? '' } : null),
+    onLoading: l => { outlineLoading = l },
+    onLoaded: (changed, removed) => {
+      for (const fid of removed) index.remove(fid)
+      for (const fid of changed) reindex(fid)
+      outlineTick++
+    },
+  })
+  /** Labels, bibliography keys and the project's own commands, for autocomplete (docs/AUTOCOMPLETE.md). */
+  const index = new ProjectIndex()
+  const completion = latexCompletion({ index: () => index, mainDir: () => mainDir, mainPath: () => mainPath })
+  /** Re-indexing the open file waits for a pause in typing. */
+  let indexTimer: ReturnType<typeof setTimeout> | null = null
 
   let rows = $derived(detail ? treeRows(detail.tree, detail.rootId) : [])
   let byPath = $derived(textFilesByPath(rows))
@@ -155,6 +173,8 @@
   let reportShown = $derived(importReport && detail ? reportView(detail.name, importReport) : null)
   let mainPath = $derived(detail?.mainFileId ? entryPath(detail.tree, detail.mainFileId) ?? '' : '')
   let mainName = $derived(mainPath.split('/').pop() || 'the main file')
+  /** The main file's folder: \input and \includegraphics paths are relative to it. */
+  let mainDir = $derived(mainPath.includes('/') ? mainPath.slice(0, mainPath.lastIndexOf('/')) : '')
   /** Breadcrumb of the open file: folders, then its name. */
   let crumbs = $derived.by(() => {
     const parts = openPath.split('/')
@@ -166,11 +186,12 @@
     void outlineTick
     const d = detail
     if (!d?.mainFileId) return []
-    const dir = mainPath.includes('/') ? mainPath.slice(0, mainPath.lastIndexOf('/')) : ''
-    const live = file && fileReady ? file : null
+    const dir = mainDir
+    void file
+    void fileReady // texts.text() uses the open file's live text
     return buildOutline({
       mainFileId: d.mainFileId,
-      text: fid => (live && live.fileId === fid ? live.ytext.toString() : outlineTexts.get(fid) ?? null),
+      text: fid => texts.text(fid),
       resolve: p => resolveInput(p, dir, byPath),
     })
   })
@@ -207,47 +228,31 @@
     return dismissMenu(window, t => !!accountEl && t instanceof Node && accountEl.contains(t), () => { accountOpen = false })
   })
 
-  // Contents: load the .tex files' texts when the tab is shown (and again after builds and tree changes).
+  // Autocomplete: the project's paths (for \input / \includegraphics and for "file:line" hints).
   $effect(() => {
-    if (prefs.sidebar === 'contents' && detail) untrackLoadOutline()
+    index.setFiles(rows.map(r => ({ id: r.entry.id, path: r.path, kind: r.entry.kind })))
   })
-  function untrackLoadOutline() {
-    queueMicrotask(() => void loadOutlineTexts())
+
+  /** (Re)load the source texts: when the project opens, after a tree change and after a finished compile. */
+  function loadTexts() {
+    const d = detail
+    if (d && !destroyed) void texts.load(d.tree.filter(e => e.kind === 'text'))
   }
 
-  let outlineRunning = false
-  let outlineQueued = false
-  async function loadOutlineTexts(): Promise<void> {
-    if (outlineRunning) {
-      outlineQueued = true
-      return
-    }
-    outlineRunning = true
-    outlineLoading = outlineTexts.size === 0
-    try {
-      do {
-        outlineQueued = false
-        const d = detail
-        if (!d || destroyed) return
-        const ids = d.tree.filter(e => e.kind === 'text' && /\.(tex|ltx)$/i.test(e.name)).map(e => e.id).slice(0, 300)
-        const next = new Map<string, string>()
-        for (let i = 0; i < ids.length; i += 8) {
-          await Promise.all(ids.slice(i, i + 8).map(async fid => {
-            try {
-              next.set(fid, await fetchText(rawFileUrl(id, fid)))
-            } catch {
-              // deleted meanwhile, or no access: leave it out
-            }
-          }))
-          if (destroyed) return
-        }
-        outlineTexts = next
-        outlineTick++
-      } while (outlineQueued)
-    } finally {
-      outlineRunning = false
-      outlineLoading = false
-    }
+  /** Index one file's current text (live for the open file). */
+  function reindex(fileId: string) {
+    const entry = detail?.tree.find(e => e.id === fileId)
+    const text = texts.text(fileId)
+    if (entry && text !== null) index.update(fileId, entry.name, text)
+  }
+
+  /** The open file was edited (by anyone): re-index it once typing pauses. */
+  function scheduleReindex() {
+    if (indexTimer) clearTimeout(indexTimer)
+    indexTimer = setTimeout(() => {
+      indexTimer = null
+      if (file && fileReady) reindex(file.fileId)
+    }, 300)
   }
 
   function openOutlineEntry(e: OutlineEntry) {
@@ -304,6 +309,7 @@
       }
       if (destroyed) return
       detail = d
+      loadTexts()
       autoOn = loadAutoCompile(localStorageOrNull(), id, can.compile(d.role))
       const user: PresenceUser = { id: me.id, name: me.displayName, ...userColor(me.id) }
       collab = new ProjectCollab(id, user, {
@@ -329,6 +335,8 @@
     auto.dispose()
     if (behindTimer) clearTimeout(behindTimer)
     if (highlightTimer) clearTimeout(highlightTimer)
+    if (indexTimer) clearTimeout(indexTimer)
+    texts.dispose()
     closeFile()
     collab?.destroy()
     collab = null
@@ -369,6 +377,7 @@
 
   function onDocUpdate(_update: Uint8Array, origin: unknown) {
     if (file?.isLocal(origin)) auto.localEdit()
+    scheduleReindex()
     // Not needed per keystroke: coalesce (a Y snapshot walks the whole doc).
     if (behindTimer) return
     behindTimer = setTimeout(() => {
@@ -392,6 +401,13 @@
     if (!file) return
     if (anchors && fileReady) fileLines.set(file.fileId, anchors.toLines(file.ytext.toString()))
     if (fileReady) syncLines.closed(file.fileId, file.ytext.toString())
+    if (fileReady) {
+      // Its last text stays for the outline and the index until the next load (no longer live once closed).
+      if (indexTimer) clearTimeout(indexTimer)
+      indexTimer = null
+      texts.remember(file.fileId, file.ytext.toString())
+      reindex(file.fileId)
+    }
     anchors = null
     changeLog = null
     editorDiags = []
@@ -447,6 +463,7 @@
           editorDiags = editorDiagnostics(anchors, s.ytext.length)
           syncLines.opened(s.fileId, s.ytext.toString())
           fileReady = true
+          reindex(s.fileId)
           void tick().then(applyPendingJump)
         }
         updateBehind()
@@ -586,8 +603,15 @@
   /** Show a new project state; deal with the open file/preview having been deleted, reset or re-roled. */
   function applyDetail(d: ProjectDetail) {
     const roleChanged = detail !== null && detail.role !== d.role
+    const treeChanged = detail !== null && detail.treeVersion !== d.treeVersion
     announceSettingChanges(detail, d)
     detail = d
+    if (treeChanged) {
+      loadTexts()
+      // A rename between .tex and .bib keeps the text, so the load reports no change: re-parse by the new name
+      // (files whose text and kind are unchanged return at once).
+      for (const fid of texts.ids()) reindex(fid)
+    }
     if (roleChanged && !can.compile(d.role)) autoOn = false
     if (preview && !d.tree.some(e => e.id === preview?.id && e.kind === 'binary')) {
       fileNotice = `"${preview.name}" was deleted.`
@@ -949,7 +973,7 @@
       })
     }
     updateBehind()
-    if (prefs.sidebar === 'contents') void loadOutlineTexts()
+    loadTexts()
   }
 
   /** A new PDF is shown: line numbers start from its build (the open file's text then: `log`, or now). */
@@ -1264,7 +1288,7 @@
               {#key canEdit}
                 <Editor bind:this={editor} ytext={file.ytext} awareness={file.awareness} undoManager={file.undoManager}
                   readOnly={!canEdit} diagnostics={editorDiags} fontSize={prefs.fontSize} wrap={prefs.wrap}
-                  explain={d => explain(d, mainName)} onFix={applyFix}
+                  explain={d => explain(d, mainName)} onFix={applyFix} {completion}
                   onCursor={(line, column) => { cursorPos = { line, column } }} />
               {/key}
             {/key}
