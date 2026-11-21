@@ -15,6 +15,11 @@ export function isShowInPdfShortcut(e: KeyLike): boolean {
   return (e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyJ'
 }
 
+/** Ctrl/Cmd+Shift+F: search in all files (Ctrl+F stays CodeMirror's search in the open file). */
+export function isSearchAllShortcut(e: KeyLike): boolean {
+  return (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key.toLowerCase() === 'f' || e.code === 'KeyF')
+}
+
 /**
  * While a popup menu is open: close it on a pointer press outside it, or on Escape.
  * `inside(target)` says whether an event target is within the menu (button included).

@@ -6,7 +6,7 @@
     type TreeEntry, type VersionSummary,
   } from '@ligature/shared'
   import { api, ApiError, buildFileUrl, buildHasOutput, exportZipUrl, fetchBuildLog, fetchText, rawFileUrl } from '../lib/api.ts'
-  import { ProjectCollab, type ConnectionStatus, type FileSession, type PresenceUser } from '../lib/collab.ts'
+  import { ProjectCollab, type ConnectionStatus, type FileHold, type FileSession, type PresenceUser } from '../lib/collab.ts'
   import { userColor } from '../lib/colors.ts'
   import { treeRows, textFilesByPath } from '../lib/tree.ts'
   import { entryPath, isInlineImage, openFileOutcome } from '../lib/treeOps.ts'
@@ -22,7 +22,7 @@
   } from '../lib/autoCompile.ts'
   import { reportView, takeImportReport } from '../lib/zipImport.ts'
   import { LineMap, SyncLines } from '../lib/syncLines.ts'
-  import { dismissMenu, isSaveShortcut, isShowInPdfShortcut } from '../lib/shortcuts.ts'
+  import { dismissMenu, isSaveShortcut, isSearchAllShortcut, isShowInPdfShortcut } from '../lib/shortcuts.ts'
   import { errorCode, errorMessage } from '../lib/errors.ts'
   import { toast } from '../lib/toasts.svelte.ts'
   import { go } from '../lib/router.svelte.ts'
@@ -47,7 +47,14 @@
   import { prefs, setPref } from '../lib/prefs.svelte.ts'
   import { explain, usepackageInsertion, type QuickFix } from '../lib/explain.ts'
   import { buildOutline, entryMarks, resolveInput, type OutlineEntry } from '../lib/outline.ts'
-  import { ProjectTexts } from '../lib/projectTexts.ts'
+  import { isSourceFile, ProjectTexts } from '../lib/projectTexts.ts'
+  import {
+    applyOperation, newestUndoTime, OperationList, renamedText, renameUndoBlocked, renameUndoRefusedText, replacedText,
+    undoChoice, undoneText, undoOperation, UNREACHABLE_TEXT, type OperationKind, type ProjectOperation,
+  } from '../lib/projectOps.ts'
+  import { labelAt, labelNameProblem, labelOccurrences, labelsDefined, placesText, type LabelPlace } from '../lib/latex/labelRefs.ts'
+  import { findAll, type SearchOptions, type TextRange } from '../lib/search.ts'
+  import SearchPanel from '../lib/SearchPanel.svelte'
   import { ProjectIndex } from '../lib/latex/projectIndex.ts'
   import { latexCompletion } from '../lib/latex/latexCompletion.ts'
   import { findDefinition, targetAt, type DefinitionSources, type Target } from '../lib/latex/definitions.ts'
@@ -90,7 +97,7 @@
   let fileNotice = $state<string | null>(null)
   let preview = $state.raw<TreeEntry | null>(null)
   let editor = $state.raw<ReturnType<typeof Editor> | undefined>(undefined)
-  let pendingJump: { line: number; flash: boolean; column: number } | null = null
+  let pendingJump: { line: number; flash: boolean; column: number; length: number } | null = null
 
   // Recovery after a doc rebuild (docs/M3.md §4): our unacknowledged text vs. the server's current text.
   let recovery = $state.raw<{ fileId: string; path: string; localText: string; serverText: string | null; error: string | null } | null>(null)
@@ -340,6 +347,7 @@
     if (indexTimer) clearTimeout(indexTimer)
     texts.dispose()
     closeFile()
+    operations.closeAll()
     collab?.destroy()
     collab = null
   })
@@ -363,6 +371,12 @@
     if (isShowInPdfShortcut(e)) {
       e.preventDefault()
       void showInPdf()
+      return
+    }
+    // Ctrl+Shift+F (Cmd+Shift+F): search in all files.
+    if (isSearchAllShortcut(e)) {
+      e.preventDefault()
+      void openSearch()
     }
   }
 
@@ -442,11 +456,11 @@
   }
 
   /** Open a text file; with `jumpTo`, put the cursor on that 1-based line (and 0-based `column`). */
-  function openFile(entry: TreeEntry, jumpTo: number | null = null, flash = false, column = 0) {
+  function openFile(entry: TreeEntry, jumpTo: number | null = null, flash = false, column = 0, length = 0) {
     if (!collab || entry.kind !== 'text' || entry.epoch === undefined) return
     preview = null
     fileNotice = null
-    const jump = jumpTo === null ? null : { line: jumpTo, flash, column }
+    const jump = jumpTo === null ? null : { line: jumpTo, flash, column, length }
     if (file && file.fileId === entry.id && file.epoch === entry.epoch) {
       if (jump) {
         pendingJump = jump
@@ -544,7 +558,7 @@
 
   function applyPendingJump() {
     if (pendingJump !== null && editor) {
-      editor.gotoLine(pendingJump.line, pendingJump.flash, pendingJump.column)
+      editor.gotoLine(pendingJump.line, pendingJump.flash, pendingJump.column, pendingJump.length)
       pendingJump = null
     }
     if (pendingFix) applyPendingFix()
@@ -666,6 +680,174 @@
       return
     }
     openFile(entry, p.line, false, p.column)
+  }
+
+  // ---------- rename and replace in all files (docs/RENAME-AND-REPLACE.md) ----------
+
+  /** Rename and Replace all done in this tab, for Ctrl+Z. */
+  const operations = new OperationList()
+  let operationRunning = false
+  let operationSeq = 0
+  /** How long to wait for each file's doc to sync before changing anything. */
+  const SYNC_WAIT = 10_000
+
+  // The Search tab: kept while switching tabs.
+  let searchQuery = $state('')
+  let searchCase = $state(false)
+  let searchWord = $state(false)
+  let searchReplacement = $state('')
+  let searchPanel = $state<ReturnType<typeof SearchPanel> | undefined>(undefined)
+
+  /** The source files the tab has a text for, main file first, then in the tree's order. */
+  function sourceTexts(): { id: string; path: string; text: string }[] {
+    const main = detail?.mainFileId
+    const out: { id: string; path: string; text: string }[] = []
+    for (const r of rows) {
+      if (r.entry.kind !== 'text' || !isSourceFile(r.entry.name)) continue
+      const text = texts.text(r.entry.id)
+      if (text !== null) out.push({ id: r.entry.id, path: r.path, text })
+    }
+    return [...out.filter(f => f.id === main), ...out.filter(f => f.id !== main)]
+  }
+
+  /** Ctrl+Shift+F: the Search tab, its query prefilled with the editor's selection when it is on one line. */
+  async function openSearch() {
+    const selected = editor?.selectedLine() ?? ''
+    if (selected) searchQuery = selected
+    setPref('sidebar', 'search')
+    await tick()
+    searchPanel?.focus()
+  }
+
+  function openSearchResult(fileId: string, line: number, column: number, length: number) {
+    const entry = detail?.tree.find(e => e.id === fileId && e.kind === 'text')
+    if (entry) openFile(entry, line, false, column, length)
+  }
+
+  /** The texts of operation docs are live: give them to the outline, autocomplete and search at once. */
+  function rememberTexts(changed: { fileId: string; text: string }[]) {
+    for (const c of changed) {
+      texts.remember(c.fileId, c.text)
+      reindex(c.fileId)
+    }
+    outlineTick++
+    auto.localEdit()
+  }
+
+  /**
+   * Apply an operation to the files that have a match in the tab's texts: hold their live docs, wait until all
+   * are synced (else change nothing), then edit each doc in one transaction. Null when nothing was done.
+   */
+  async function runOperation(
+    kind: OperationKind, label: string, fileIds: string[], find: (text: string) => TextRange[], replacement: string,
+    rename?: { from: string; to: string },
+  ): Promise<{ op: ProjectOperation; places: number } | null> {
+    const c = collab
+    const d = detail
+    if (!c || !d || operationRunning || !fileIds.length) return null
+    operationRunning = true
+    const held: FileHold[] = []
+    try {
+      for (const fid of fileIds) {
+        const entry = d.tree.find(e => e.id === fid && e.kind === 'text')
+        if (entry?.epoch !== undefined) held.push(c.holdFile(fid, entry.epoch))
+      }
+      const synced = await Promise.all(held.map(h => h.synced(SYNC_WAIT)))
+      if (destroyed || leaving) {
+        for (const h of held) h.release()
+        return null
+      }
+      if (!synced.every(Boolean)) {
+        for (const h of held) h.release()
+        toast(UNREACHABLE_TEXT, 'error', 6000)
+        return null
+      }
+      const r = applyOperation(held, { id: ++operationSeq, kind, label, time: Date.now(), find, replacement, ...(rename ? { rename } : {}) })
+      if (!r) return null
+      operations.add(r.op)
+      rememberTexts(r.op.files.map(f => ({ fileId: f.fileId, text: f.held.ytext.toString() })))
+      return r
+    } finally {
+      operationRunning = false
+    }
+  }
+
+  /** Where each label of the tab's texts is defined (the first place), for the warning "already a label". */
+  function labelPlaces(): Map<string, LabelPlace> {
+    const out = new Map<string, LabelPlace>()
+    for (const f of sourceTexts()) {
+      for (const l of labelsDefined(f.text)) if (!out.has(l.name)) out.set(l.name, { path: f.path, line: l.line })
+    }
+    return out
+  }
+
+  /** F2 in the editor: the rename box for the label under the cursor. */
+  function renameKey(line: string, col: number, from: number) {
+    if (!canEdit) {
+      toast('Viewers can\'t rename.', 'error')
+      return
+    }
+    const key = labelAt(line, col)
+    if (!key || !editor) {
+      toast('Put the cursor on a label (in \\label or \\ref) to rename it.', 'error')
+      return
+    }
+    let places = 0
+    let fileCount = 0
+    for (const f of sourceTexts()) {
+      const n = labelOccurrences(f.text, key.name).length
+      places += n
+      if (n) fileCount++
+    }
+    const defined = labelPlaces()
+    editor.showRename({
+      to: key.to + from,
+      name: key.name,
+      count: placesText(places, fileCount),
+      check: name => labelNameProblem(name, n => defined.get(n) ?? null),
+      onRename: name => void renameLabel(key.name, name),
+    })
+  }
+
+  async function renameLabel(from: string, to: string) {
+    const files = sourceTexts().filter(f => labelOccurrences(f.text, from).length).map(f => f.id)
+    const r = await runOperation('rename', `${from} → ${to}`, files, text => labelOccurrences(text, from), to, { from, to })
+    if (r) toast(renamedText(from, to, r.places, r.op.files.length))
+  }
+
+  /** Replace all, from the Search tab: in the files with results. */
+  async function replaceAll(query: string, opts: SearchOptions, replacement: string, fileIds: string[]) {
+    if (!canEdit) return
+    const r = await runOperation('replace', `${query} → ${replacement}`, fileIds, text => findAll(text, query, opts), replacement)
+    if (r) toast(replacedText(r.places, r.op.files.length))
+  }
+
+  /**
+   * Ctrl+Z in the editor: undo the newest operation when it is newer than the open file's own last edit (or
+   * the file has none); true when it did (or refused to), false to let the file's own undo run.
+   */
+  function undoKey(): boolean {
+    const op = operations.newest()
+    if (!op || !file) return false
+    if (undoChoice(op.time, newestUndoTime(file.undoManager)) !== 'operation') return false
+    if (op.kind === 'rename' && op.rename) {
+      // The project's current texts: the live doc for the files the operation holds.
+      const live = new Map(op.files.filter(f => !f.held.left()).map(f => [f.fileId, f.held.ytext.toString()]))
+      const now = sourceTexts().map(f => live.get(f.id) ?? f.text)
+      if (renameUndoBlocked(op, now)) {
+        operations.drop(op)
+        toast(renameUndoRefusedText(op.rename.from), 'error', 6000)
+        return true
+      }
+    }
+    const done = undoOperation(op)
+    const changed = op.files.filter(f => done.includes(f.fileId)).map(f => ({ fileId: f.fileId, text: f.held.ytext.toString() }))
+    operations.drop(op)
+    // Nothing undone after all: let the file's own undo have the key, and say nothing.
+    if (!done.length) return false
+    rememberTexts(changed)
+    toast(undoneText(op.kind, done.length))
+    return true
   }
 
   // ---------- project state ----------
@@ -895,6 +1077,7 @@
   async function logOutHere() {
     leaving = true
     closeFile()
+    operations.closeAll()
     collab?.destroy()
     collab = null
     await logout()
@@ -1290,6 +1473,9 @@
               title="Contents: the sections of the document, across all files" onclick={() => setPref('sidebar', 'contents')}>Contents</button>
             <button type="button" role="tab" aria-selected={prefs.sidebar === 'files'} class:on={prefs.sidebar === 'files'}
               title="Files: create, upload, rename, move; the trash is at the bottom" onclick={() => setPref('sidebar', 'files')}>Files</button>
+            <button type="button" role="tab" aria-selected={prefs.sidebar === 'search'} class:on={prefs.sidebar === 'search'}
+              title="Search in all files (Ctrl+Shift+F), and replace" aria-keyshortcuts="Control+Shift+F"
+              onclick={() => setPref('sidebar', 'search')}>Search</button>
           </div>
         </div>
         <div class="side-body">
@@ -1321,6 +1507,10 @@
                 </ol>
               {/if}
             </nav>
+          {:else if prefs.sidebar === 'search'}
+            <SearchPanel bind:this={searchPanel} files={sourceTexts} version={outlineTick} {canEdit}
+              bind:query={searchQuery} bind:matchCase={searchCase} bind:wholeWord={searchWord} bind:replacement={searchReplacement}
+              onOpen={openSearchResult} onReplace={replaceAll} />
           {:else}
             <FileTree projectId={id} tree={detail.tree} rootId={detail.rootId} mainFileId={detail.mainFileId} {canEdit}
               openId={file?.fileId ?? preview?.id ?? null} onOpen={openEntry}
@@ -1383,7 +1573,7 @@
                 <Editor bind:this={editor} ytext={file.ytext} awareness={file.awareness} undoManager={file.undoManager}
                   readOnly={!canEdit} diagnostics={editorDiags} fontSize={prefs.fontSize} wrap={prefs.wrap}
                   explain={d => explain(d, mainName)} onFix={applyFix} {completion}
-                  {definitionAt} onGoToDefinition={goToDefinition}
+                  {definitionAt} onGoToDefinition={goToDefinition} onUndo={undoKey} onRename={renameKey}
                   onCursor={(line, column) => { cursorPos = { line, column } }} />
               {/key}
             {/key}
@@ -1744,7 +1934,10 @@
   .build-status .sep { color: var(--ink-4); }
   .behind { color: var(--amber); font-weight: 500; }
   .behind + .behind::before { content: '·'; color: var(--ink-4); margin-right: 6px; }
-  .dot.busy { width: 10px; height: 10px; border: 2px solid var(--teal); border-right-color: transparent; animation: spin 0.8s linear infinite; }
+  .dot.busy {
+    display: inline-block; flex: none; box-sizing: border-box; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--teal); border-right-color: transparent; animation: spin 0.8s linear infinite;
+  }
   .build-status .first strong { color: var(--ink); }
   .build-status .first strong.failed { color: var(--red); }
   .build-status .first svg + strong:not(.failed) { color: var(--green); }

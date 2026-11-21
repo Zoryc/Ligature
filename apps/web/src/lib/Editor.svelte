@@ -1,3 +1,19 @@
+<script lang="ts" module>
+/** What the rename box shows and does; `value` keeps what is typed if CodeMirror draws the box again. */
+export interface RenameBox {
+  /** The label's name where F2 was pressed: the box goes under its line. */
+  to: number
+  name: string
+  /** "3 places in 2 files". */
+  count: string
+  /** The warning for a name (null: it can be used). */
+  check: (name: string) => string | null
+  /** Enter with a usable name (trimmed). */
+  onRename: (name: string) => void
+  value?: string
+}
+</script>
+
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import type * as Y from 'yjs'
@@ -22,6 +38,7 @@
   import { stex } from '@codemirror/legacy-modes/mode/stex'
   import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
   import type { EditorDiagnostic } from './diagnostics.ts'
+  import { isSearchAllShortcut } from './shortcuts.ts'
   import type { Explanation, QuickFix } from './explain.ts'
   import { caretAt, jumpModifier, type Target } from './latex/definitions.ts'
 
@@ -48,11 +65,18 @@
     definitionAt?: (state: EditorState, pos: number) => Target | null
     /** A target was Ctrl/Cmd+clicked. */
     onGoToDefinition?: (target: Target) => void
+    /**
+     * Ctrl/Cmd+Z, before the file's own undo: true when the page undid something else (a project operation,
+     * docs/RENAME-AND-REPLACE.md §3), false to let the file's own undo run.
+     */
+    onUndo?: () => boolean
+    /** F2 (docs/RENAME-AND-REPLACE.md §4): the cursor's line, the cursor's offset in it, and where the line starts. */
+    onRename?: (line: string, col: number, from: number) => void
   }
 
   let {
     ytext, awareness, undoManager, readOnly, diagnostics = [], fontSize = 14, wrap = true, explain, onFix, onCursor,
-    completion, definitionAt, onGoToDefinition,
+    completion, definitionAt, onGoToDefinition, onUndo, onRename,
   }: Props = $props()
 
   let host: HTMLDivElement
@@ -144,6 +168,133 @@
     },
     provide: f => EditorView.decorations.from(f),
   })
+
+  // ---------- rename a label: the box under the line (docs/RENAME-AND-REPLACE.md §4) ----------
+
+  const renameEffect = StateEffect.define<RenameBox | null>()
+
+  class RenameWidget extends WidgetType {
+    readonly box: RenameBox
+    constructor(box: RenameBox) {
+      super()
+      this.box = box
+    }
+    override eq(o: RenameWidget) { return o.box === this.box }
+    toDOM(v: EditorView) {
+      const box = this.box
+      const el = document.createElement('div')
+      el.className = 'cm-rename'
+      const label = document.createElement('label')
+      label.className = 'cm-rename-field'
+      const title = document.createElement('span')
+      title.textContent = 'Rename label'
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.spellcheck = false
+      input.value = box.value ?? box.name
+      input.setAttribute('aria-describedby', 'cm-rename-warning')
+      label.append(title, input)
+      const count = document.createElement('span')
+      count.className = 'cm-rename-count'
+      count.textContent = box.count
+      const warning = document.createElement('span')
+      warning.className = 'cm-rename-warning'
+      warning.id = 'cm-rename-warning'
+      warning.setAttribute('role', 'status')
+      const hint = document.createElement('span')
+      hint.className = 'cm-rename-hint'
+      hint.textContent = 'Enter renames · Esc cancels'
+      el.append(label, count, warning, hint)
+
+      const problem = () => {
+        const name = input.value.trim()
+        return name === box.name ? null : box.check(input.value)
+      }
+      const show = () => {
+        const p = problem()
+        warning.textContent = p ?? ''
+        warning.hidden = !p
+        el.classList.toggle('cm-rename-bad', !!p)
+      }
+      const close = (focusEditor: boolean) => {
+        if (v.state.field(renameField).box !== box) return
+        v.dispatch({ effects: renameEffect.of(null) })
+        if (focusEditor) v.focus()
+      }
+      input.addEventListener('input', () => {
+        box.value = input.value
+        show()
+      })
+      input.addEventListener('keydown', e => {
+        // The box's keys are its own: not the editor's keymap, nor the page's shortcuts.
+        e.stopPropagation()
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          close(true)
+        } else if (e.key === 'Enter') {
+          e.preventDefault()
+          if (problem()) return
+          const name = input.value.trim()
+          close(true)
+          if (name !== box.name) box.onRename(name)
+        }
+      })
+      // A click inside the box (its title, count, warning, hint) is not outside: keep the focus in the input.
+      // Otherwise the browser would move it to the editor around the box, and the blur below would cancel.
+      el.addEventListener('mousedown', e => {
+        if (e.target === input) return
+        e.preventDefault()
+        input.focus()
+      })
+      // Clicking outside cancels; later, since the blur may come from CodeMirror redrawing the box.
+      input.addEventListener('blur', () => {
+        setTimeout(() => { if (input.isConnected && document.activeElement !== input) close(false) }, 0)
+      })
+      show()
+      requestAnimationFrame(() => {
+        input.focus()
+        if (box.value === undefined) input.select()
+      })
+      return el
+    }
+    override ignoreEvent() { return true }
+  }
+
+  const renameField = StateField.define<{ box: RenameBox | null; deco: DecorationSet }>({
+    create: () => ({ box: null, deco: Decoration.none }),
+    update(value, tr) {
+      let v = tr.docChanged ? { box: value.box, deco: value.deco.map(tr.changes) } : value
+      for (const e of tr.effects) {
+        if (!e.is(renameEffect)) continue
+        const box = e.value
+        v = box
+          ? {
+              box,
+              deco: Decoration.set([
+                Decoration.widget({ widget: new RenameWidget(box), block: true, side: 1 })
+                  .range(tr.state.doc.lineAt(Math.min(box.to, tr.state.doc.length)).to),
+              ]),
+            }
+          : { box: null, deco: Decoration.none }
+      }
+      return v
+    },
+    provide: f => EditorView.decorations.from(f, v => v.deco),
+  })
+
+  /** Show the rename box under the label's line. */
+  export function showRename(box: RenameBox): void {
+    if (!view) return
+    const pos = Math.min(box.to, view.state.doc.length)
+    view.dispatch({ effects: [renameEffect.of(box), EditorView.scrollIntoView(pos, { y: 'nearest', yMargin: 80 })] })
+    // The widget is in the DOM once dispatch returns: focus it now, so the very next key goes to the box (the
+    // widget's own requestAnimationFrame focus stays as a fallback; frames do not run in a background tab).
+    const input = view.dom.querySelector<HTMLInputElement>('.cm-rename input')
+    if (input && document.activeElement !== input) {
+      input.focus()
+      if (box.value === undefined) input.select()
+    }
+  }
 
   // ---------- go to definition: Ctrl/Cmd+click, and the link underline while the modifier is held ----------
 
@@ -264,16 +415,17 @@
 
   /**
    * Move the cursor to a 1-based line (and 0-based column, kept within the line) and scroll it into view;
-   * `flash` highlights the line for a moment.
+   * `flash` highlights the line for a moment; `length` selects that many characters from there (a search result).
    */
-  export function gotoLine(line: number, flash = false, column = 0): void {
+  export function gotoLine(line: number, flash = false, column = 0, length = 0): void {
     if (!view) return
     const n = Math.min(Math.max(1, line), view.state.doc.lines)
     const l = view.state.doc.line(n)
     const pos = l.from + Math.min(Math.max(0, column), l.length)
+    const head = Math.min(pos + Math.max(0, length), view.state.doc.length)
     const effects: StateEffect<unknown>[] = [EditorView.scrollIntoView(pos, { y: 'center' })]
     if (flash) effects.push(flashEffect.of(null), flashEffect.of(l.from))
-    view.dispatch({ selection: { anchor: pos }, effects })
+    view.dispatch({ selection: { anchor: pos, head }, effects })
     view.focus()
     if (flash) {
       if (flashTimer) clearTimeout(flashTimer)
@@ -287,6 +439,14 @@
   /** The text in the editor now. */
   export function text(): string | null {
     return view ? view.state.doc.toString() : null
+  }
+
+  /** The selected text when the selection is on one line ('' otherwise). */
+  export function selectedLine(): string {
+    if (!view) return ''
+    const { from, to } = view.state.selection.main
+    const s = view.state.sliceDoc(from, to)
+    return s.includes('\n') ? '' : s
   }
 
   /** Insert text as a local edit (undoable, synced) and flash its line. False when read-only or not ready. */
@@ -364,10 +524,29 @@
       wrapping.of(wrap ? EditorView.lineWrapping : []),
       look.of(lookFor(fontSize)),
       // Ctrl/Cmd+S (compile) and Ctrl+Alt+J (show in PDF) are handled by the project page for the whole window.
+      // Before the file's own undo: Ctrl+Z may undo a project operation instead (docs/RENAME-AND-REPLACE.md §3).
+      Prec.highest(keymap.of([
+        { key: 'Mod-z', run: () => onUndo?.() ?? false },
+        {
+          key: 'F2',
+          run: v => {
+            if (!onRename) return false
+            const head = v.state.selection.main.head
+            const line = v.state.doc.lineAt(head)
+            onRename(line.text, head - line.from, line.from)
+            return true
+          },
+        },
+      ])),
+      // Ctrl+Shift+F is "search in all files": the project page opens the Search tab (the event still bubbles
+      // to its window listener). Claimed before any keymap, else CodeMirror falls back to its unshifted Mod-f
+      // and opens its own find bar as well; a keymap entry does not match the shifted "F".
+      Prec.highest(EditorView.domEventHandlers({ keydown: e => isSearchAllShortcut(e) })),
       Prec.high(keymap.of(yUndoManagerKeymap)),
       lintGutter(),
       flashField,
       explainField,
+      renameField,
       EditorView.updateListener.of(u => { if (u.selectionSet || u.docChanged) reportCursor(u.state) }),
       keymap.of([
         ...closeBracketsKeymap,
@@ -506,6 +685,27 @@
     cursor: pointer;
   }
   .editor :global(.cm-explain-fix:hover) { background: var(--paper-2); }
+
+  /* Rename a label (F2): a box under the label's line */
+  .editor :global(.cm-rename) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    padding: 8px 16px 9px 12px;
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    line-height: 1.4;
+    border-top: 1px solid var(--teal-edge);
+    border-bottom: 1px solid var(--teal-edge);
+    background: var(--teal-tint);
+  }
+  .editor :global(.cm-rename-field) { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-weight: 500; }
+  .editor :global(.cm-rename-field input) { width: 260px; min-height: 26px; font: 400 12.5px/1 var(--font-mono); }
+  .editor :global(.cm-rename-count) { color: var(--ink-3); }
+  .editor :global(.cm-rename-warning) { color: var(--red); font-weight: 500; }
+  .editor :global(.cm-rename-bad .cm-rename-field input) { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); }
+  .editor :global(.cm-rename-hint) { margin-left: auto; color: var(--ink-4); font-size: 12px; }
 
   /* Collaborators' cursors (y-codemirror): square name flags */
   .editor :global(.cm-ySelectionInfo) {

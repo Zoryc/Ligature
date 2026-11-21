@@ -11,7 +11,7 @@ export interface Prefs {
   /** The Problems panel under the editor is folded to its header. */
   problemsCollapsed: boolean
   /** Sidebar tab. */
-  sidebar: 'contents' | 'files'
+  sidebar: 'contents' | 'files' | 'search'
 }
 
 const KEY = 'ligature.prefs'
@@ -40,7 +40,7 @@ export function parsePrefs(raw: string | null): Prefs {
   if (typeof o['fontSize'] === 'number' && (FONT_SIZES as readonly number[]).includes(o['fontSize'])) out.fontSize = o['fontSize']
   if (typeof o['wrap'] === 'boolean') out.wrap = o['wrap']
   if (typeof o['problemsCollapsed'] === 'boolean') out.problemsCollapsed = o['problemsCollapsed']
-  if (o['sidebar'] === 'contents' || o['sidebar'] === 'files') out.sidebar = o['sidebar']
+  if (o['sidebar'] === 'contents' || o['sidebar'] === 'files' || o['sidebar'] === 'search') out.sidebar = o['sidebar']
   return out
 }
 

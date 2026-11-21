@@ -942,6 +942,9 @@ export const REF_COMMANDS: readonly string[] = [
   'ref', 'eqref', 'pageref', 'autoref', 'nameref', 'cref', 'Cref', 'vref', 'cpageref', 'Cpageref',
 ]
 
+/** cleveref's range commands: two labels, each in its own braces (`\crefrange{a}{b}`). */
+export const REF_RANGE_COMMANDS: readonly string[] = ['crefrange', 'Crefrange', 'cpagerefrange', 'Cpagerefrange']
+
 export const CITE_COMMANDS: readonly string[] = [
   'cite', 'nocite', 'citep', 'citet', 'Citep', 'Citet', 'citealt', 'citealp', 'citeauthor', 'Citeauthor',
   'citeyear', 'citeyearpar', 'parencite', 'Parencite', 'textcite', 'Textcite', 'autocite', 'Autocite',

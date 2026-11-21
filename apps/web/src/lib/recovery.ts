@@ -70,14 +70,22 @@ export class SyncTracker {
  * Feed a tracker from a Y.Doc: transactions whose origin is not `remoteOrigin` (the provider, which applies
  * the server's updates) are local. Call `acknowledged()` when the server has acknowledged everything.
  */
-export function trackDoc(doc: Y.Doc, ytext: Y.Text, remoteOrigin: unknown): SyncTracker {
+export function trackDoc(doc: Y.Doc, ytext: Y.Text, remoteOrigin: unknown): SyncTracker & { stop(): void } {
   const tracker = new SyncTracker()
-  doc.on('beforeTransaction', tr => { if (tr.origin !== remoteOrigin) tracker.beforeLocalTransaction(() => ytext.toString()) })
-  doc.on('update', (_u: Uint8Array, origin: unknown) => {
+  const before = (tr: Y.Transaction) => { if (tr.origin !== remoteOrigin) tracker.beforeLocalTransaction(() => ytext.toString()) }
+  const update = (_u: Uint8Array, origin: unknown) => {
     if (origin === remoteOrigin) tracker.remoteUpdate()
     else tracker.localUpdate()
+  }
+  doc.on('beforeTransaction', before)
+  doc.on('update', update)
+  // The doc may outlive the editor session that tracks it (a project operation still holds it).
+  return Object.assign(tracker, {
+    stop: () => {
+      doc.off('beforeTransaction', before)
+      doc.off('update', update)
+    },
   })
-  return tracker
 }
 
 /**

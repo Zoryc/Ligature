@@ -12,6 +12,8 @@ import { fileDocName, metaDocName, type MetaEvent } from '@ligature/shared'
 import { isCloseReason, parseMetaEvent, type CloseReason } from './projectEvents.ts'
 import { guardAwareness, peersFrom, type PresenceUser } from './presence.ts'
 import { trackDoc, type LocalState } from './recovery.ts'
+import { stampUndoItems } from './projectOps.ts'
+import { SharedDocs } from './sharedDocs.ts'
 
 /** Yjs text key used by the server for file contents. */
 export const TEXT_KEY = 'content'
@@ -113,11 +115,43 @@ function bumpPresence(awareness: Awareness): void {
   awareness.setLocalState(state)
 }
 
+/** What the provider of a shared doc tells its holders. */
+interface DocListener {
+  synced(): void
+  authFailed(reason: string): void
+  /** The server closed the doc; `reason` is a CloseReason when it gave a known one. */
+  serverClosed(reason: unknown): void
+}
+
+/** A file's doc on the shared socket, as SharedDocs holds it. */
+interface LiveDoc {
+  doc: Y.Doc
+  ytext: Y.Text
+  provider: HocuspocusProvider
+  awareness: Awareness
+  serverClosed: ServerClosedState
+  listeners: Set<DocListener>
+  unguard: () => void
+}
+
+/** A file's live doc held for a project operation: no presence (docs/RENAME-AND-REPLACE.md §2). */
+export interface FileHold {
+  fileId: string
+  ytext: Y.Text
+  /** Resolves true once the doc is synced with the server; false after `ms`, or if the server closes or refuses it. */
+  synced(ms: number): Promise<boolean>
+  /** The server closed or refused the doc since it was held: the file has left the operation. */
+  left(): boolean
+  /** Let go; a doc with edits made here that the server has not acknowledged yet stays open until it has. */
+  release(): void
+}
+
 export class ProjectCollab {
   private readonly socket: HocuspocusProviderWebsocket
   private readonly meta: HocuspocusProvider
   private readonly metaClosed: ServerClosedState
   private readonly files = new Set<FileSession>()
+  private readonly docs: SharedDocs<LiveDoc>
   private readonly projectId: string
   private readonly user: PresenceUser
   private destroyed = false
@@ -152,40 +186,90 @@ export class ProjectCollab {
     })
     this.meta.awareness?.setLocalStateField('user', user)
     this.meta.attach()
+    this.docs = new SharedDocs<LiveDoc>({
+      open: name => this.openDoc(name),
+      close: live => {
+        live.listeners.clear()
+        live.unguard()
+        live.serverClosed.destroy(live.provider) // detaches from the shared socket; does not close it
+        live.doc.destroy()
+      },
+      // Set before the provider is attached (openFile, holdFile), so the first sync sends the right state.
+      presence: (live, on) => { live.awareness.setLocalState(on ? { user: this.user } : null) },
+    })
     handlers.onStatus(this.socket.status)
   }
 
-  openFile(fileId: string, epoch: number, handlers: FileHandlers): FileSession {
-    if (this.destroyed) throw new Error('ProjectCollab is destroyed')
+  /** A file's doc and its provider, not attached yet; without presence until a holder wants it. */
+  private openDoc(name: string): LiveDoc {
     const doc = new Y.Doc()
-    let closed = false
+    const listeners = new Set<DocListener>()
     const serverClosed = new ServerClosedState(this.socket)
     const provider = new HocuspocusProvider({
       websocketProvider: this.socket,
-      name: fileDocName(this.projectId, fileId, epoch),
+      name,
       document: doc,
       token: '',
-      onSynced: ({ state }) => { if (state && !closed) handlers.onSynced() },
-      onAuthenticationFailed: ({ reason }) => { if (!closed) handlers.onAuthFailed(reason) },
+      onSynced: ({ state }) => {
+        if (!state) return
+        // Synced again without reauth(): the socket reconnected and re-authenticated every doc on it, this one
+        // included. It is open on the server again; re-send our presence, if any, past the clock the close bumped.
+        if (serverClosed.closed) {
+          serverClosed.closed = false
+          const aw = provider.awareness
+          if (aw?.getLocalState()) bumpPresence(aw)
+        }
+        for (const l of [...listeners]) l.synced()
+      },
+      onAuthenticationFailed: ({ reason }) => { for (const l of [...listeners]) l.authFailed(reason) },
       onClose: ({ event }) => {
         if (!isServerClose(event)) return
         serverClosed.closed = true
         const reason = (event as { reason?: unknown }).reason
-        if (!closed && isCloseReason(reason)) handlers.onClosed(reason)
+        for (const l of [...listeners]) l.serverClosed(reason)
       },
     })
     const awareness = provider.awareness
     if (!awareness) throw new Error('provider has no awareness')
     // Before attach() and before the editor subscribes: remote user fields are sanitized first.
     const unguard = guardAwareness(awareness)
-    awareness.setLocalStateField('user', this.user)
-    provider.attach()
+    awareness.setLocalState(null)
+    return { doc, ytext: doc.getText(TEXT_KEY), provider, awareness, serverClosed, listeners, unguard }
+  }
 
-    const ytext = doc.getText(TEXT_KEY)
+  /**
+   * Open a file for the editor, with presence. If a project operation holds its doc already, that doc is used
+   * (and `onSynced` follows at once when it is synced).
+   */
+  openFile(fileId: string, epoch: number, handlers: FileHandlers): FileSession {
+    if (this.destroyed) throw new Error('ProjectCollab is destroyed')
+    let closed = false
+    const hold = this.docs.acquire(fileDocName(this.projectId, fileId, epoch), true)
+    const { doc, ytext, provider, awareness, serverClosed } = hold.value
+    const listener: DocListener = {
+      synced: () => { if (!closed) handlers.onSynced() },
+      authFailed: reason => { if (!closed) handlers.onAuthFailed(reason) },
+      serverClosed: reason => { if (!closed && isCloseReason(reason)) handlers.onClosed(reason) },
+    }
+    hold.value.listeners.add(listener)
+    provider.attach()
+    // Held by an operation, and closed by the server meanwhile (e.g. role-changed): ask again, as a fresh open would.
+    if (serverClosed.closed) {
+      bumpPresence(awareness)
+      serverClosed.reauth(provider)
+    }
+
+    // The file's own undo: local typing only (never a project operation's edits, which have their own origin).
     const undoManager = new Y.UndoManager(ytext)
+    const unstamp = stampUndoItems(undoManager)
     // Which edits the server has acknowledged (see SyncTracker for why not provider.hasUnsyncedChanges).
     const tracker = trackDoc(doc, ytext, provider)
-    provider.on('unsyncedChanges', ({ number }: { number: number }) => { if (number === 0) tracker.acknowledged() })
+    const onUnsynced = ({ number }: { number: number }) => { if (number === 0) tracker.acknowledged() }
+    provider.on('unsyncedChanges', onUnsynced)
+    if (provider.synced) {
+      if (provider.unsyncedChanges === 0) tracker.acknowledged()
+      queueMicrotask(() => listener.synced())
+    }
     const session: FileSession = {
       fileId, epoch, doc, ytext, awareness, undoManager,
       isLocal: origin => origin !== provider,
@@ -199,14 +283,92 @@ export class ProjectCollab {
         if (closed) return
         closed = true
         this.files.delete(session)
+        hold.value.listeners.delete(listener)
+        provider.off('unsyncedChanges', onUnsynced)
+        tracker.stop()
+        unstamp()
         undoManager.destroy()
-        unguard()
-        serverClosed.destroy(provider) // detaches from the shared socket; does not close it
-        doc.destroy()
+        hold.release()
       },
     }
     this.files.add(session)
     return session
+  }
+
+  /**
+   * Hold a file's live doc for a project operation, without presence. The file open in the editor shares its
+   * doc; a doc held only here closes when released.
+   */
+  holdFile(fileId: string, epoch: number): FileHold {
+    if (this.destroyed) throw new Error('ProjectCollab is destroyed')
+    const hold = this.docs.acquire(fileDocName(this.projectId, fileId, epoch), false)
+    const { doc, provider, awareness, serverClosed } = hold.value
+    let left = false
+    let released = false
+    /** Edits were made here while held (the operation, its undo): see release. */
+    let dirty = false
+    let waiter: ((ok: boolean) => void) | null = null
+    const leave = () => {
+      left = true
+      waiter?.(false)
+    }
+    const listener: DocListener = { synced: () => waiter?.(true), authFailed: leave, serverClosed: leave }
+    hold.value.listeners.add(listener)
+    const onUpdate = (_update: Uint8Array, origin: unknown) => { if (origin !== provider) dirty = true }
+    doc.on('update', onUpdate)
+    provider.attach()
+    // A doc held already (by an earlier operation, or the editor) that the server closed meanwhile, e.g.
+    // role-changed: ask for it again, as openFile does, or it would never sync.
+    if (serverClosed.closed) {
+      if (awareness.getLocalState()) bumpPresence(awareness)
+      serverClosed.reauth(provider)
+    }
+    /**
+     * Let go of the doc, but not before the server has the edits made here: offline, they wait in the socket's
+     * queue, and a doc closed now would never be authenticated again to receive them. Released at once when
+     * there are none, or when the server closed or refused the doc (they cannot reach it then).
+     */
+    const letGo = () => {
+      doc.off('update', onUpdate)
+      if (!dirty || left || serverClosed.closed || provider.unsyncedChanges === 0) {
+        hold.release()
+        return
+      }
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        provider.off('unsyncedChanges', onUnsynced)
+        hold.value.listeners.delete(flushed)
+        hold.release()
+      }
+      const onUnsynced = ({ number }: { number: number }) => { if (number === 0) finish() }
+      const flushed: DocListener = { synced: () => { if (provider.unsyncedChanges === 0) finish() }, authFailed: finish, serverClosed: finish }
+      provider.on('unsyncedChanges', onUnsynced)
+      hold.value.listeners.add(flushed)
+    }
+    return {
+      fileId,
+      ytext: hold.value.ytext,
+      synced: ms => new Promise<boolean>(resolve => {
+        if (left || released) return resolve(false)
+        if (provider.synced && !serverClosed.closed) return resolve(true)
+        const timer = setTimeout(() => waiter?.(false), ms)
+        waiter = ok => {
+          clearTimeout(timer)
+          waiter = null
+          resolve(ok)
+        }
+      }),
+      left: () => left || released,
+      release: () => {
+        if (released) return
+        released = true
+        waiter?.(false)
+        hold.value.listeners.delete(listener)
+        letGo()
+      },
+    }
   }
 
   /**
@@ -238,6 +400,7 @@ export class ProjectCollab {
     if (this.destroyed) return
     this.destroyed = true
     for (const f of [...this.files]) f.close()
+    this.docs.closeAll() // docs still held by project operations
     this.metaClosed.destroy(this.meta)
     this.socket.destroy()
   }

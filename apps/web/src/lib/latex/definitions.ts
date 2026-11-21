@@ -42,7 +42,7 @@ const ARG_KIND = new Map<string, ArgKind>([
 const LIST_KINDS = new Set<ArgKind>(['ref', 'cite'])
 
 /** `[...]` arguments skipped before the braces (biblatex's `\parencite[see][12]{key}` has two). */
-const MAX_OPTIONALS = 3
+export const MAX_OPTIONALS = 3
 
 /**
  * Lines longer than this are looked at only around the pointer: targetAt runs on every mouse move while the
@@ -51,10 +51,10 @@ const MAX_OPTIONALS = 3
 const MAX_LINE = 10000
 const WINDOW = 2000
 
-interface Token { name: string; from: number; to: number }
+export interface Token { name: string; from: number; to: number }
 
 /** Control words of `code` in order. `\\` and `\%` are skipped whole, so `\\label` is not a \label. */
-function commands(code: string): Token[] {
+export function commands(code: string): Token[] {
   const out: Token[] = []
   for (let i = 0; i < code.length; i++) {
     if (code[i] !== '\\') continue
@@ -68,13 +68,13 @@ function commands(code: string): Token[] {
   return out
 }
 
-function skipSpace(code: string, i: number): number {
+export function skipSpace(code: string, i: number): number {
   while (code[i] === ' ' || code[i] === '\t') i++
   return i
 }
 
 /** Index of the delimiter closing the group opened at `i`, or -1 when it does not close on this line. */
-function closing(code: string, i: number, open: string, close: string): number {
+export function closing(code: string, i: number, open: string, close: string): number {
   let depth = 0
   for (let j = i; j < code.length; j++) {
     const c = code[j]
