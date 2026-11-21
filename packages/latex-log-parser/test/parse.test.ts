@@ -219,13 +219,12 @@ describe('messages', () => {
     expect(brief(log)).toEqual([{ severity: 'error', kind: 'compiler', message: 'compile timed out after 60000 ms; process group killed' }])
   })
 
-  it('epstopdf\'s "Shell escape feature is not enabled" is info; other epstopdf warnings stay warnings', () => {
+  it('epstopdf\'s "Shell escape feature is not enabled" is dropped (noise on every graphicx document); other epstopdf warnings stay', () => {
     const log = ['(./main.tex', `(${SYS}/epstopdf-pkg/epstopdf-base.sty`, '',
       'Package epstopdf Warning: Shell escape feature is not enabled.', '', ')',
       'Package epstopdf Warning: Drivers other than `pdftex\' and `luatex\' are not supported.', '', ')'].join('\n')
     expect(brief(log)).toEqual([
       { severity: 'warning', kind: 'package:epstopdf', message: 'Drivers other than `pdftex\' and `luatex\' are not supported.', path: 'main.tex' },
-      { severity: 'info', kind: 'package:epstopdf', message: 'Shell escape feature is not enabled.', path: 'main.tex' },
     ])
   })
 })

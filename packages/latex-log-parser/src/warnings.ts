@@ -1,7 +1,6 @@
 /** LaTeX, package, class and font warnings, engine warnings, and "No pages of output". */
 import { continuation, diag, raw, type Ctx, type Recogniser } from './context.ts'
 import { scanContext } from './errors.ts'
-import type { DiagnosticSeverity } from './types.ts'
 
 /** Multi-line warnings never span more lines than this. */
 const MAX_WARNING_LINES = 40
@@ -54,18 +53,17 @@ export const tryLatexWarning: Recogniser = (ctx, i) => {
     text = text.slice(0, m.index)
     if (!/[.!?]$/.test(text)) text += '.'
   }
-  ctx.emit(diag(warningSeverity(h.kind, text), h.kind, text, ctx.stack.current(line), raw(ctx.lines, i, j)))
+  if (!isNoise(h.kind, text)) ctx.emit(diag('warning', h.kind, text, ctx.stack.current(line), raw(ctx.lines, i, j)))
   return j - i
 }
 
 /**
- * Shell escape is off in Ligature unless an admin opts in (docs/PLAN.md), so epstopdf says so for every document
- * that loads it (graphicx with pdfTeX): nothing the author can fix, only worth knowing when an .eps image does
- * not convert.
+ * Shell escape is off in Ligature (docs/PLAN.md), so epstopdf says so for every document that loads it (graphicx
+ * with pdfTeX, also through pgfplots or tikz): nothing the author can fix. It is dropped, not shown as a problem;
+ * an .eps image that cannot be converted still fails with its own error ("File `x-eps-converted-to.pdf' not found").
  */
-function warningSeverity(kind: string, text: string): DiagnosticSeverity {
-  if (kind === 'package:epstopdf' && /^Shell escape feature is not enabled\.?$/.test(text)) return 'info'
-  return 'warning'
+function isNoise(kind: string, text: string): boolean {
+  return kind === 'package:epstopdf' && /^Shell escape feature is not enabled\.?$/.test(text)
 }
 
 /** pdfTeX/XeTeX/LuaTeX engine warnings and missing characters. */
