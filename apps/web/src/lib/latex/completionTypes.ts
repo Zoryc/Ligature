@@ -49,6 +49,8 @@ export interface LabelEntry {
 export interface BibEntry {
   key: string
   fileId: string
+  /** 1-based line of the entry's `@type{` (go to definition). */
+  line: number
   /** Entry type without @: "article", "book". */
   type: string
   title?: string

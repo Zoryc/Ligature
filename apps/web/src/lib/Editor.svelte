@@ -23,6 +23,7 @@
   import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
   import type { EditorDiagnostic } from './diagnostics.ts'
   import type { Explanation, QuickFix } from './explain.ts'
+  import { caretAt, jumpModifier, type Target } from './latex/definitions.ts'
 
   interface Props {
     ytext: Y.Text
@@ -43,11 +44,15 @@
     onCursor?: (line: number, column: number) => void
     /** LaTeX suggestions (latex/latexCompletion.ts); read once when the editor is created. */
     completion?: CompletionSource
+    /** Go to definition (docs/GO-TO-DEFINITION.md): the target at a document position, or null. */
+    definitionAt?: (state: EditorState, pos: number) => Target | null
+    /** A target was Ctrl/Cmd+clicked. */
+    onGoToDefinition?: (target: Target) => void
   }
 
   let {
     ytext, awareness, undoManager, readOnly, diagnostics = [], fontSize = 14, wrap = true, explain, onFix, onCursor,
-    completion,
+    completion, definitionAt, onGoToDefinition,
   }: Props = $props()
 
   let host: HTMLDivElement
@@ -140,6 +145,90 @@
     provide: f => EditorView.decorations.from(f),
   })
 
+  // ---------- go to definition: Ctrl/Cmd+click, and the link underline while the modifier is held ----------
+
+  /**
+   * The modifier of go to definition, and of CodeMirror's own add-a-cursor click: Cmd on macOS, else Ctrl,
+   * without Alt or Shift. The click and the hint share this test, so the underline never promises a jump.
+   */
+  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+  const modifierHeld = (e: MouseEvent | KeyboardEvent) => jumpModifier(e, mac)
+
+  // A decoration only: nothing is written to the document, synced or added to undo.
+  const linkEffect = StateEffect.define<{ from: number; to: number } | null>()
+  const linkMark = Decoration.mark({ class: 'cm-definition-link' })
+  const linkField = StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(deco, tr) {
+      let d = deco.map(tr.changes)
+      for (const e of tr.effects) {
+        if (e.is(linkEffect)) d = e.value ? Decoration.set([linkMark.range(e.value.from, e.value.to)]) : Decoration.none
+      }
+      return d
+    },
+    provide: f => EditorView.decorations.from(f),
+  })
+  /** The mouse over the text (null: elsewhere), so pressing the modifier without moving shows the link too. */
+  let pointer: { x: number; y: number } | null = null
+
+  /** The target under a screen point, only when the point is over it (not past the end of its line). */
+  function targetUnder(v: EditorView, x: number, y: number): Target | null {
+    if (!definitionAt) return null
+    const pos = v.posAtCoords({ x, y })
+    if (pos === null) return null
+    const t = definitionAt(v.state, pos)
+    if (!t || t.from >= t.to) return null
+    const a = v.coordsAtPos(t.from, 1)
+    const b = v.coordsAtPos(t.to, -1)
+    if (!a || !b || y < Math.min(a.top, b.top) || y > Math.max(a.bottom, b.bottom)) return null
+    // posAtCoords snaps to the nearest character: beyond the line's end it gives the end, which a target may touch.
+    if (a.top === b.top && (x < a.left || x > b.right)) return null
+    return t
+  }
+
+  function setLink(v: EditorView, t: { from: number; to: number } | null) {
+    const shown = v.state.field(linkField).iter()
+    const same = shown.value ? !!t && shown.from === t.from && shown.to === t.to : !t
+    if (!same) v.dispatch({ effects: linkEffect.of(t ? { from: t.from, to: t.to } : null) })
+  }
+
+  function refreshLink(v: EditorView, held: boolean) {
+    setLink(v, held && pointer ? targetUnder(v, pointer.x, pointer.y) : null)
+  }
+
+  // Before CodeMirror's own mouse handling: a Ctrl/Cmd+click on a target jumps instead of adding a cursor.
+  const goToDefinition = Prec.highest(EditorView.domEventHandlers({
+    mousedown(e, v) {
+      if (e.button !== 0 || !modifierHeld(e) || !onGoToDefinition) return false
+      const t = targetUnder(v, e.clientX, e.clientY)
+      if (!t) return false // anything else: CodeMirror adds a cursor, as before
+      e.preventDefault()
+      // Returning true skips CodeMirror's click handling, so the caret is moved here: Back returns to the click.
+      v.dispatch(caretAt(t), { effects: linkEffect.of(null) })
+      onGoToDefinition(t)
+      return true
+    },
+    mousemove(e, v) {
+      pointer = { x: e.clientX, y: e.clientY }
+      refreshLink(v, modifierHeld(e))
+      return false
+    },
+    mouseleave(_e, v) {
+      pointer = null
+      setLink(v, null)
+      return false
+    },
+  }))
+
+  // The modifier may go down or up while the mouse rests, and the editor need not have the focus: listen on
+  // the window. A blurred window never sees the key go up, so blur clears the link too.
+  function onModifierKey(e: KeyboardEvent) {
+    if (view) refreshLink(view, modifierHeld(e))
+  }
+  function onWindowBlur() {
+    if (view) setLink(view, null)
+  }
+
   // ---------- Folio look ----------
 
   const folioHighlight = HighlightStyle.define([
@@ -173,13 +262,17 @@
     if (v) v.dispatch({ effects: wrapping.reconfigure(w ? EditorView.lineWrapping : []) })
   })
 
-  /** Move the cursor to a 1-based line and scroll it into view; `flash` highlights the line for a moment. */
-  export function gotoLine(line: number, flash = false): void {
+  /**
+   * Move the cursor to a 1-based line (and 0-based column, kept within the line) and scroll it into view;
+   * `flash` highlights the line for a moment.
+   */
+  export function gotoLine(line: number, flash = false, column = 0): void {
     if (!view) return
     const n = Math.min(Math.max(1, line), view.state.doc.lines)
-    const pos = view.state.doc.line(n).from
+    const l = view.state.doc.line(n)
+    const pos = l.from + Math.min(Math.max(0, column), l.length)
     const effects: StateEffect<unknown>[] = [EditorView.scrollIntoView(pos, { y: 'center' })]
-    if (flash) effects.push(flashEffect.of(null), flashEffect.of(pos))
+    if (flash) effects.push(flashEffect.of(null), flashEffect.of(l.from))
     view.dispatch({ selection: { anchor: pos }, effects })
     view.focus()
     if (flash) {
@@ -239,6 +332,8 @@
     // Same as codemirror's basicSetup, minus history(): undo/redo goes through the Y.UndoManager
     // so that only local edits are undone, never a collaborator's.
     const extensions = [
+      goToDefinition,
+      linkField,
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
@@ -294,9 +389,15 @@
       state: EditorState.create({ doc: ytext.toString(), extensions }),
     })
     reportCursor(view.state)
+    window.addEventListener('keydown', onModifierKey)
+    window.addEventListener('keyup', onModifierKey)
+    window.addEventListener('blur', onWindowBlur)
   })
 
   onDestroy(() => {
+    window.removeEventListener('keydown', onModifierKey)
+    window.removeEventListener('keyup', onModifierKey)
+    window.removeEventListener('blur', onWindowBlur)
     if (flashTimer) clearTimeout(flashTimer)
     view?.destroy()
     view = undefined
@@ -415,6 +516,16 @@
     top: -1.35em;
   }
   .editor :global(.cm-ySelectionCaret) { border-left-width: 2px; }
+
+  /* Go to definition: the target under the mouse while Ctrl/Cmd is held, like a link */
+  .editor :global(.cm-definition-link) {
+    color: var(--teal);
+    text-decoration: underline;
+    text-decoration-color: var(--teal);
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .editor :global(.cm-definition-link *) { color: inherit; cursor: pointer; }
 
   .editor :global(.cm-flash-line) {
     animation: ligature-flash-line 1.6s ease-out;

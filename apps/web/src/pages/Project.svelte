@@ -50,6 +50,8 @@
   import { ProjectTexts } from '../lib/projectTexts.ts'
   import { ProjectIndex } from '../lib/latex/projectIndex.ts'
   import { latexCompletion } from '../lib/latex/latexCompletion.ts'
+  import { findDefinition, targetAt, type DefinitionSources, type Target } from '../lib/latex/definitions.ts'
+  import type { EditorState } from '@codemirror/state'
   import { agoText } from '../lib/trash.ts'
 
   interface Props { id: string; me: Me }
@@ -88,7 +90,7 @@
   let fileNotice = $state<string | null>(null)
   let preview = $state.raw<TreeEntry | null>(null)
   let editor = $state.raw<ReturnType<typeof Editor> | undefined>(undefined)
-  let pendingJump: { line: number; flash: boolean } | null = null
+  let pendingJump: { line: number; flash: boolean; column: number } | null = null
 
   // Recovery after a doc rebuild (docs/M3.md §4): our unacknowledged text vs. the server's current text.
   let recovery = $state.raw<{ fileId: string; path: string; localText: string; serverText: string | null; error: string | null } | null>(null)
@@ -439,11 +441,12 @@
     }
   }
 
-  function openFile(entry: TreeEntry, jumpTo: number | null = null, flash = false) {
+  /** Open a text file; with `jumpTo`, put the cursor on that 1-based line (and 0-based `column`). */
+  function openFile(entry: TreeEntry, jumpTo: number | null = null, flash = false, column = 0) {
     if (!collab || entry.kind !== 'text' || entry.epoch === undefined) return
     preview = null
     fileNotice = null
-    const jump = jumpTo === null ? null : { line: jumpTo, flash }
+    const jump = jumpTo === null ? null : { line: jumpTo, flash, column }
     if (file && file.fileId === entry.id && file.epoch === entry.epoch) {
       if (jump) {
         pendingJump = jump
@@ -541,7 +544,7 @@
 
   function applyPendingJump() {
     if (pendingJump !== null && editor) {
-      editor.gotoLine(pendingJump.line, pendingJump.flash)
+      editor.gotoLine(pendingJump.line, pendingJump.flash, pendingJump.column)
       pendingJump = null
     }
     if (pendingFix) applyPendingFix()
@@ -578,6 +581,91 @@
     if (file && file.fileId === d.fileId && anchors && fileReady) line = anchors.lineOf(d, file.ytext.toString()) ?? line
     else line = fileLines.get(d.fileId)?.find(x => x.diag === d)?.line ?? line
     openFile(entry, line, true)
+  }
+
+  // ---------- go to definition (docs/GO-TO-DEFINITION.md) ----------
+
+  interface Place { fileId: string; line: number; column: number }
+  /** Places before each jump, newest last; the Back button returns to the last one. */
+  let backStack = $state.raw<Place[]>([])
+  const BACK_MAX = 20
+  let backTo = $derived.by(() => {
+    const p = backStack.at(-1)
+    if (!p || !detail) return null
+    const path = entryPath(detail.tree, p.fileId)
+    return { path: path ?? 'a deleted file', name: path?.split('/').pop() ?? 'a deleted file', line: p.line }
+  })
+
+  /** The project's own command and environment names, rebuilt when the index changes (asked per mouse move). */
+  let defined: { version: number; names: Set<string> } = { version: -1, names: new Set() }
+  function isDefined(kind: 'command' | 'environment', name: string): boolean {
+    if (defined.version !== index.version) {
+      defined = { version: index.version, names: new Set(index.definitions().map(d => `${d.kind}:${d.name}`)) }
+    }
+    return defined.names.has(`${kind}:${name}`)
+  }
+
+  /** The target at a position of the open file: its line is all targetAt reads. */
+  function definitionAt(state: EditorState, pos: number): Target | null {
+    const line = state.doc.lineAt(pos)
+    const t = targetAt(line.text, pos - line.from, isDefined)
+    return t && { ...t, from: t.from + line.from, to: t.to + line.from }
+  }
+
+  function definitionSources(): DefinitionSources {
+    const main = detail?.mainFileId
+    const list = rows.filter(r => r.entry.kind !== 'folder')
+      .map(r => ({ id: r.entry.id, path: r.path, text: r.entry.kind === 'text' }))
+    return {
+      files: [...list.filter(f => f.id === main), ...list.filter(f => f.id !== main)],
+      text: fid => texts.text(fid),
+      index,
+      mainDir,
+    }
+  }
+
+  /** Remember where the cursor is, for Back: the Editor has put it on the clicked target (caretAt). */
+  function rememberPlace() {
+    const c = editor?.cursor()
+    if (!file || !fileReady || !c) return
+    backStack = [...backStack, { fileId: file.fileId, line: c.line, column: c.column }].slice(-BACK_MAX)
+  }
+
+  function goToDefinition(target: Target) {
+    if (!detail) return
+    const found = findDefinition(target, definitionSources())
+    if ('reason' in found) {
+      toast(found.reason, 'error')
+      return
+    }
+    const entry = detail.tree.find(e => e.id === found.fileId)
+    if (!entry) return
+    if ('preview' in found) {
+      // Only browser images have a preview; anything else would download, which a click should not do.
+      if (!isInlineImage(entry.name)) {
+        toast(`${entryPath(detail.tree, entry.id) ?? entry.name} has no preview here (only PNG, JPEG, GIF and WebP images do).`, 'error')
+        return
+      }
+      rememberPlace()
+      openEntry(entry)
+      return
+    }
+    rememberPlace()
+    openFile(entry, found.line, true)
+    if (found.count > 1) toast(`${found.count} definitions; showing the first.`)
+  }
+
+  /** Return to the place before the last jump. */
+  function goBack() {
+    const p = backStack.at(-1)
+    if (!p) return
+    backStack = backStack.slice(0, -1)
+    const entry = detail?.tree.find(e => e.id === p.fileId && e.kind === 'text')
+    if (!entry) {
+      toast('That file is no longer in the project.', 'error')
+      return
+    }
+    openFile(entry, p.line, false, p.column)
   }
 
   // ---------- project state ----------
@@ -1267,6 +1355,12 @@
               <span class="muted">No file open</span>
             {/if}
           </span>
+          {#if backTo}
+            <button type="button" class="small back" onclick={goBack}
+              title="Return to {backTo.path}:{backTo.line}, where you were before the last jump to a definition">
+              <span>← Back to {backTo.name}:{backTo.line}</span>
+            </button>
+          {/if}
           {#if preview}<a class="button small" href={rawFileUrl(id, preview.id)} download={preview.name}>{@render icon('download')} Download</a>{/if}
           <button type="button" class="small" onclick={showInPdf} disabled={showInPdfProblem !== null}
             aria-keyshortcuts="Control+Alt+J" title={showInPdfProblem ?? 'Show the cursor’s line in the PDF (Ctrl+Alt+J). Double-click the PDF to jump back.'}>
@@ -1289,6 +1383,7 @@
                 <Editor bind:this={editor} ytext={file.ytext} awareness={file.awareness} undoManager={file.undoManager}
                   readOnly={!canEdit} diagnostics={editorDiags} fontSize={prefs.fontSize} wrap={prefs.wrap}
                   explain={d => explain(d, mainName)} onFix={applyFix} {completion}
+                  {definitionAt} onGoToDefinition={goToDefinition}
                   onCursor={(line, column) => { cursorPos = { line, column } }} />
               {/key}
             {/key}
@@ -1611,6 +1706,9 @@
   .path .sep { color: var(--ink-4); margin: 0 3px; }
   .path .file { font: 500 13px/1 var(--font-mono); color: var(--ink); }
   .path .ro { margin-left: 10px; }
+  .back { flex: 0 1 auto; min-width: 0; max-width: 45%; color: var(--teal); border-color: var(--teal-edge); background: var(--teal-tint); }
+  .back:hover:not(:disabled) { background: var(--teal-tint); color: var(--teal-dark); border-color: var(--teal); }
+  .back span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pane-body { flex: 1; min-height: 0; overflow: auto; }
   .preview {
     padding: 16px;

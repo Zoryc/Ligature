@@ -6,6 +6,12 @@ the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compos
 
 ## Unreleased
 
+**Go to definition** ([docs/GO-TO-DEFINITION.md](docs/GO-TO-DEFINITION.md)): Ctrl+click (Cmd+click on macOS)
+on a label in `\ref{…}`, a key in `\cite{…}`, a path in `\input{…}` / `\includegraphics{…}`, or a command or
+environment the project defines jumps to its definition, opening the file if needed. Targets are underlined
+while Ctrl is held; elsewhere Ctrl+click still adds a cursor. A "← Back to file:line" button in the editor's
+header returns to where you were. No keyboard shortcut on purpose (F12 and Alt+← belong to the browser).
+
 **Autocomplete** ([docs/AUTOCOMPLETE.md](docs/AUTOCOMPLETE.md)), all in the browser:
 - After `\`: about 600 common commands (with their package and a short description) and the project's own
   `\newcommand`s; accepting inserts fields for the arguments (`\frac{numerator}{denominator}`, Tab to the

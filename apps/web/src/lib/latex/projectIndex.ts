@@ -331,6 +331,7 @@ function fields(body: string, strings: Map<string, string>): Map<string, string>
 export function indexBib(text: string, fileId: string): BibEntry[] {
   const out: BibEntry[] = []
   const strings = new Map<string, string>()
+  const lineAt = lineLocator(text)
   ENTRY_START.lastIndex = 0
   for (let r = ENTRY_START.exec(text); r; r = ENTRY_START.exec(text)) {
     const type = (r[1] ?? '').toLowerCase()
@@ -350,7 +351,7 @@ export function indexBib(text: string, fileId: string): BibEntry[] {
     const title = cleanValue(f.get('title') ?? '')
     const author = cleanValue(f.get('author') ?? f.get('editor') ?? '')
     const year = cleanValue(f.get('year') ?? '') || (/\d{4}/.exec(f.get('date') ?? '')?.[0] ?? '')
-    out.push({ key, fileId, type, ...(title ? { title } : {}), ...(author ? { author } : {}), ...(year ? { year } : {}) })
+    out.push({ key, fileId, line: lineAt(r.index), type, ...(title ? { title } : {}), ...(author ? { author } : {}), ...(year ? { year } : {}) })
   }
   return out
 }

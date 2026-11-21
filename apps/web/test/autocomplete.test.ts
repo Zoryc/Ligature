@@ -205,11 +205,11 @@ describe('project index: .bib', () => {
       '@online{nokey}',
     ].join('\n')
     expect(indexBib(bib, 'b')).toEqual([
-      { key: 'knuth84', fileId: 'b', type: 'book', title: 'The TeXbook', author: 'Donald E. Knuth', year: '1984' },
-      { key: 'lamport', fileId: 'b', type: 'article', title: 'A "quoted" title', author: 'Leslie Lamport and Others', year: '1994' },
-      { key: 'broken', fileId: 'b', type: 'misc', title: 'Never closed' },
-      { key: 'after', fileId: 'b', type: 'inproceedings', title: 'Next', author: 'Godel, Kurt', year: '1931' },
-      { key: 'nokey', fileId: 'b', type: 'online' },
+      { key: 'knuth84', fileId: 'b', line: 4, type: 'book', title: 'The TeXbook', author: 'Donald E. Knuth', year: '1984' },
+      { key: 'lamport', fileId: 'b', line: 9, type: 'article', title: 'A "quoted" title', author: 'Leslie Lamport and Others', year: '1994' },
+      { key: 'broken', fileId: 'b', line: 11, type: 'misc', title: 'Never closed' },
+      { key: 'after', fileId: 'b', line: 12, type: 'inproceedings', title: 'Next', author: 'Godel, Kurt', year: '1931' },
+      { key: 'nokey', fileId: 'b', line: 14, type: 'online' },
     ])
   })
 
