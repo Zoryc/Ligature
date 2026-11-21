@@ -6,6 +6,20 @@ the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compos
 
 ## Unreleased
 
+**Rename a label, and search and replace in all files** ([docs/RENAME-AND-REPLACE.md](docs/RENAME-AND-REPLACE.md)):
+- **F2** on a label (in `\label{…}` or any reference: `\ref`, `\eqref`, `\cref`, `\autoref`, ...) opens a small box
+  with the name and "3 places in 2 files"; Enter renames it everywhere. Only the label itself changes: never prose,
+  comments or a longer name (`eq:a2` is not `eq:a`). It warns when the new name is invalid or already a label.
+- **Search tab** in the sidebar (**Ctrl+Shift+F**): the project's .tex, .bib, .sty and .cls files, with match case
+  and whole word, results grouped by file; a click opens the match. Editors get **Replace all**. Ctrl+F is still
+  the search in the open file.
+- **Ctrl+Z** undoes a rename or Replace all in every file at once (after anything you typed since). What co-authors
+  typed in the meantime is kept; a rename is not undone if someone has since used the old name.
+- Done by your browser through the live documents, like typing: people with those files open see the change at
+  once. The server did not change.
+
+**Fixed:** the spinner next to "Compiling…" was a turning square; it is a circle again.
+
 **Go to definition** ([docs/GO-TO-DEFINITION.md](docs/GO-TO-DEFINITION.md)): Ctrl+click (Cmd+click on macOS)
 on a label in `\ref{…}`, a key in `\cite{…}`, a path in `\input{…}` / `\includegraphics{…}`, or a command or
 environment the project defines jumps to its definition, opening the file if needed. Targets are underlined

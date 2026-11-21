@@ -79,6 +79,8 @@ sandbox, and shows the PDF next to the source. Your papers stay on a machine you
 
 - **Autocomplete** for about 600 commands and 80 environments (with argument placeholders and the matching
   `\end`), your own `\newcommand`s, labels, citation keys, files and packages.
+- **Search in all files** (Ctrl+Shift+F) with Replace all, and **rename a label with F2**: its `\label` and every
+  reference follow, in every file. Ctrl+Z undoes either one everywhere at once, keeping what co-authors typed since.
 - **Go to definition:** Ctrl+click a `\ref`, a `\cite` key, an `\input` or `\includegraphics` file, or your own
   command or environment to jump to it.
 - **Contents outline** of the whole document across files, with error and warning marks per section.
@@ -156,7 +158,7 @@ the proxy, sign-up modes, monitoring, backups, restore and upgrades: **[docker/R
 | [docker/README.md](docker/README.md) | Deploying and running a server |
 | [CHANGELOG.md](CHANGELOG.md) | Versions and what changed |
 | [docs/PLAN.md](docs/PLAN.md) | Architecture, decisions and roadmap |
-| [docs/AUTOCOMPLETE.md](docs/AUTOCOMPLETE.md), [docs/GO-TO-DEFINITION.md](docs/GO-TO-DEFINITION.md), [docs/ACCOUNT-DELETION.md](docs/ACCOUNT-DELETION.md) | Feature specifications |
+| [docs/AUTOCOMPLETE.md](docs/AUTOCOMPLETE.md), [docs/GO-TO-DEFINITION.md](docs/GO-TO-DEFINITION.md), [docs/RENAME-AND-REPLACE.md](docs/RENAME-AND-REPLACE.md), [docs/ACCOUNT-DELETION.md](docs/ACCOUNT-DELETION.md) | Feature specifications |
 | [docs/M1.md](docs/M1.md) … [docs/M4.md](docs/M4.md) | Specification of each milestone (features and API) |
 | [docs/SYNC.md](docs/SYNC.md) | Research behind the collaboration model |
 | [docs/brand](docs/brand/README.md) | Logo and colours |
