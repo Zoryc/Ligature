@@ -38,6 +38,11 @@ sandbox, and shows the PDF next to the source. Your papers stay on a machine you
 - **Easy to host:** two Docker containers you build yourself, a step-by-step guide, health checks, backups,
   an audit log. MIT licensed.
 
+> [!WARNING]
+> **Ligature was vibe coded** (written with an AI assistant) **and has not been audited.** It has a test suite
+> and a sandbox, but no independent security or code review has been done. Use it at your own risk, keep
+> backups, and do not expose it to people you do not trust.
+
 ## Features
 
 ### Write together
