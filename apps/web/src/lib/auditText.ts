@@ -128,6 +128,23 @@ function adminUserUpdate(e: AuditEntryView, d: Record<string, unknown>): AuditPa
   return ['changed the account ', who, `: ${changes.join(', ')}`]
 }
 
+/**
+ * account.delete (docs/ACCOUNT-DELETION.md): the entry keeps no name, so the account is never named; with
+ * by 'self' the actor is the deleted account itself ("A deleted account" in the who column).
+ */
+function accountDelete(_e: AuditEntryView, d: Record<string, unknown>): AuditPart[] {
+  const counts: [unknown, string, string][] = [
+    [d.projectsDeleted, 'project', 'deleted'],
+    [d.ownershipTransferred, 'project', 'handed over'],
+    [d.projectsLeft, 'shared project', 'left'],
+  ]
+  const what = counts.flatMap(([v, one, verb]) => {
+    const n = num(v)
+    return n ? [`${plural(n, one)} ${verb}`] : []
+  })
+  return [`${d.by === 'self' ? 'deleted their own account' : 'deleted an account'}${what.length ? ` (${what.join(', ')})` : ''}`]
+}
+
 function gcRun(_e: AuditEntryView, d: Record<string, unknown>): AuditPart[] {
   const counts: [unknown, string, string][] = [
     [d.blobsRemoved, 'unreferenced blob', 'removed'],
@@ -186,6 +203,7 @@ const SENTENCES: Record<string, Sentence> = {
   'admin-user-create': (e, d) => ['created the account ', name(account(e, d.userId, d.username)),
     `${d.isAdmin === true ? ' (administrator)' : ''}${viaCli(d)}`],
   'admin-user-update': adminUserUpdate,
+  'account.delete': accountDelete,
   'settings-update': (_e, d) => {
     const before = registration(d.before), after = registration(d.after)
     return [before === after ? `saved the registration setting (“${after}”)` : `changed registration from “${before}” to “${after}”`]
@@ -261,7 +279,7 @@ export function auditSentence(e: AuditEntryView): string {
 /** Failed logins and deletions carry a red mark. */
 export function isAlarming(e: AuditEntryView): boolean {
   switch (e.action) {
-    case 'login-failure': case 'project-delete': case 'project.purge':
+    case 'login-failure': case 'account.delete': case 'project-delete': case 'project.purge':
     case 'file-delete': case 'file.purge': case 'trash.empty':
       return true
     case 'member-remove':

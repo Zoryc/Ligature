@@ -73,7 +73,9 @@ describe('trash display', () => {
     const f = trashRow(entry({ name: 'intro.tex', originalPath: 'chapters/intro.tex', size: 2048, deletedAt: NOW - 120_000 }), NOW)
     expect(f).toMatchObject({ label: 'intro.tex', from: 'chapters/', deleted: 'by Alice, 2 min ago', size: '2.0 KB', expiresSoon: false })
     const d = trashRow(entry({ name: 'figs', kind: 'folder', originalPath: 'figs', fileCount: 3, size: 3 * 1048576, deletedBy: '' }), NOW)
+    // '' = the deleter was never recorded (trashed before M2): no "by …". A deleted account comes as "a former member".
     expect(d).toMatchObject({ label: 'figs/', from: '/', deleted: 'just now', size: '3 files, 3.0 MB' })
+    expect(trashRow(entry({ deletedBy: 'a former member' }), NOW).deleted).toBe('by a former member, just now')
     expect(trashRow(entry({ expiresAt: NOW + 2 * DAY }), NOW).expiresSoon).toBe(true)
     expect(trashRow(entry({ kind: 'folder', fileCount: 1, size: 0 }), NOW).size).toBe('1 file, 0 B')
   })

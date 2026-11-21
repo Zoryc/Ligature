@@ -12,3 +12,13 @@ window.addEventListener('hashchange', () => {
 export function go(path: string): void {
   location.hash = path
 }
+
+/**
+ * go(), with the route changed right away instead of on the later hashchange event. Needed when the same step
+ * also changes the session: App's "needs login" effect runs before hashchange and would otherwise still see
+ * the old route (and send you to the login page with ?next= pointing back at it).
+ */
+export function goNow(path: string): void {
+  go(path)
+  router.route = parseHash(`#${path}`)
+}

@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
 import type { GcReport, StorageReport } from '@ligature/shared'
 import type { DB } from '../db/index.ts'
+import { FORMER_MEMBER } from '../auth/users.ts'
 
 /*
  * GET /api/admin/storage (docs/M3.md §5). Numbers come from the database (blob sizes as recorded), so the
@@ -24,8 +25,9 @@ export function storageReport(db: DB, lastGc: GcReport | null): StorageReport {
   const unreferenced = db.prepare(`SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS bytes FROM blobs
     WHERE hash NOT IN (SELECT blob_hash FROM files WHERE blob_hash IS NOT NULL)
       AND hash NOT IN (SELECT blob_hash FROM version_files)`).get() as { count: number; bytes: number }
+  // No owner row: the owner's account was deleted (memberships cascade; only its soft-deleted projects keep none).
   const projects = db.prepare(`
-    SELECT p.id, p.name, COALESCE(u.display_name, '') AS owner, p.deleted_at IS NOT NULL AS deleted,
+    SELECT p.id, p.name, COALESCE(u.display_name, ?) AS owner, p.deleted_at IS NOT NULL AS deleted,
       COALESCE(s.liveFiles, 0) AS liveFiles, COALESCE(s.liveBytes, 0) AS liveBytes, COALESCE(s.trashBytes, 0) AS trashBytes,
       (SELECT COUNT(*) FROM versions v WHERE v.project_id = p.id) AS versions
     FROM projects p
@@ -40,7 +42,7 @@ export function storageReport(db: DB, lastGc: GcReport | null): StorageReport {
               CASE WHEN f.kind = 'text' THEN COALESCE(${TEXT_BYTES}, f.size, 0) ELSE COALESCE(f.size, 0) END AS bytes
             FROM files f WHERE f.kind <> 'folder')
       GROUP BY project_id) s ON s.project_id = p.id
-    ORDER BY liveBytes + trashBytes DESC, p.name`).all() as (Omit<StorageReport['projects'][number], 'deleted'> & { deleted: number })[]
+    ORDER BY liveBytes + trashBytes DESC, p.name`).all(FORMER_MEMBER) as (Omit<StorageReport['projects'][number], 'deleted'> & { deleted: number })[]
   return {
     databaseBytes: databaseBytes(db),
     blobs,

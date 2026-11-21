@@ -379,6 +379,6 @@ describe('account validation', () => {
 describe('admin user actions', () => {
   it('offers no password reset, admin or disable toggle on your own row', () => {
     expect(adminUserActions('me', 'me')).toEqual(['rename'])
-    expect(adminUserActions('other', 'me')).toEqual(['rename', 'reset-password', 'toggle-admin', 'toggle-disabled'])
+    expect(adminUserActions('other', 'me')).toEqual(['rename', 'reset-password', 'toggle-admin', 'toggle-disabled', 'delete'])
   })
 })

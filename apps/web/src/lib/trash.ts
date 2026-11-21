@@ -64,6 +64,8 @@ export function parentLabel(originalPath: string): string {
 }
 
 export function trashRow(e: TrashEntry, now: number): TrashRow {
+  // The server already sends "a former member" when the deleter's account is gone; '' means the deleter
+  // was never recorded (items trashed before M2), so no "by …" rather than a guess.
   const who = e.deletedBy ? `by ${e.deletedBy}, ` : ''
   const size = e.kind === 'folder'
     ? `${e.fileCount} file${e.fileCount === 1 ? '' : 's'}, ${formatBytes(e.size)}`

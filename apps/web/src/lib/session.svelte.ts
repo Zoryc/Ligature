@@ -1,6 +1,6 @@
 import type { InstanceInfo, Me, SignupRequest } from '@ligature/shared'
 import { api, ApiError, setUnauthenticatedHandler } from './api.ts'
-import { go, router } from './router.svelte.ts'
+import { go, goNow, router } from './router.svelte.ts'
 import { loginPath, PUBLIC_ROUTES, routePath } from './routes.ts'
 
 export const session = $state<{ me: Me | null; instance: InstanceInfo | null; checked: boolean }>({
@@ -49,12 +49,28 @@ export async function devLogin(username: string): Promise<void> {
   await loadMe()
 }
 
+/**
+ * Show the plain login page (no ?next=) and drop the session. The route changes first, in the same step:
+ * otherwise App's effect would still see the private page and redirect to /login?next=<that page>.
+ */
+function toLogin(): void {
+  goNow('/login')
+  session.me = null
+}
+
+/**
+ * After deleting your own account: the server already ended the session and cleared its cookie, so only
+ * the page state goes. No ?next=: the pages you could come back to went with the account.
+ */
+export function accountDeleted(): void {
+  toLogin()
+}
+
 export async function logout(): Promise<void> {
   try {
     await api.logout()
   } catch {
     // already logged out
   }
-  session.me = null
-  go('/login')
+  toLogin()
 }

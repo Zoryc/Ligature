@@ -68,6 +68,18 @@ describe('audit sentences: administration', () => {
     expect(say('admin-user-update', { userId: 'u-gone', disabled: true })).toBe('disabled the account a deleted account')
   })
 
+  it('account.delete', () => {
+    const gone = { id: 'u-gone', username: '', displayName: '' }
+    const self = entry('account.delete', { userId: 'u-gone', by: 'self', projectsDeleted: 2, ownershipTransferred: 0, projectsLeft: 1 },
+      { actor: gone, project: null })
+    expect(auditSentence(self)).toBe('deleted their own account (2 projects deleted, 1 shared project left)')
+    expect(actorLabel(self)).toBe('A deleted account')
+    expect(say('account.delete', { userId: 'u-gone', by: 'admin', projectsDeleted: 1, ownershipTransferred: 3, projectsLeft: 0 }, { project: null }))
+      .toBe('deleted an account (1 project deleted, 3 projects handed over)')
+    expect(say('account.delete', { userId: 'u-gone', by: 'admin', projectsDeleted: 0, ownershipTransferred: 0, projectsLeft: 0 }))
+      .toBe('deleted an account')
+  })
+
   it('settings-update', () => {
     expect(say('settings-update', { before: { registration: 'invite-only' }, after: { registration: 'open' } }))
       .toBe('changed registration from “Invite only” to “Open”')
@@ -238,7 +250,7 @@ describe('audit page helpers', () => {
   })
 
   it('marks failed logins and deletions in red', () => {
-    for (const a of ['login-failure', 'project-delete', 'project.purge', 'file-delete', 'file.purge', 'trash.empty']) {
+    for (const a of ['login-failure', 'account.delete', 'project-delete', 'project.purge', 'file-delete', 'file.purge', 'trash.empty']) {
       expect(isAlarming(entry(a, null)), a).toBe(true)
     }
     expect(isAlarming(entry('member-remove', { userId: BOB.id, left: false }))).toBe(true)

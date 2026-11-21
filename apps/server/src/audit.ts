@@ -17,6 +17,8 @@ export type AuditAction =
   | 'project.setting'
   // `ligature restore` (maintenance/restore.ts): written into the restored database
   | 'backup.restore'
+  // docs/ACCOUNT-DELETION.md (detail: { userId, by, projectsDeleted, ownershipTransferred, projectsLeft })
+  | 'account.delete'
 
 export interface AuditEntry {
   actorId: string | null
@@ -98,8 +100,8 @@ function toView(db: DB, r: PageRow, purgedNames: Map<string, string>): AuditEntr
   const detail = parseDetail(r.d)
   return {
     id: r.id, at: r.at, action: r.action, category: CATEGORY_OF.get(r.action) ?? null,
-    // An actor id without an account row should not exist (accounts are disabled, not deleted): the
-    // client shows the empty names as "a deleted account".
+    // An actor id without an account row is a deleted account (docs/ACCOUNT-DELETION.md): the client
+    // shows the empty names as "a deleted account".
     actor: r.actorId === null ? null : { id: r.actorId, username: r.actorUsername ?? '', displayName: r.actorName ?? '' },
     project: r.projectId === null ? null
       : r.projectExists

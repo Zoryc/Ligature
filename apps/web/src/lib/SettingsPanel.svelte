@@ -14,6 +14,7 @@
   import { errorMessage } from './errors.ts'
   import { toast } from './toasts.svelte.ts'
   import { agoText } from './trash.ts'
+  import { personName } from './people.ts'
   import { confirmDialog } from './dialogs.svelte.ts'
   import { FONT_SIZES, prefs, setPref } from './prefs.svelte.ts'
   import Avatar from './Avatar.svelte'
@@ -108,7 +109,7 @@
   }
 
   function whoText(c: SettingChange): string {
-    return c.byUserId === me.id ? 'you' : c.by || 'a former member'
+    return c.byUserId === me.id ? 'you' : personName(c.by)
   }
 </script>
 

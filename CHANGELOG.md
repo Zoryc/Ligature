@@ -4,6 +4,20 @@ Ligature follows [semantic versioning](https://semver.org): a new major version 
 when upgrading (it is then listed under **Upgrading**). Each version is a git tag (`v1.0.0`); hosts build
 the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compose.yaml up -d --build`).
 
+## Unreleased
+
+**Delete an account** ([docs/ACCOUNT-DELETION.md](docs/ACCOUNT-DELETION.md)). Immediate and permanent, after a
+preview of exactly what will happen.
+- **Your own account** (Account page): confirmed with your password. Projects where you are the only member are
+  deleted with it; you leave the others. Refused while you own a project that has other members: transfer its
+  ownership first (Members panel).
+- **Any account, by an admin** (Admin → Users → Delete…): confirmed by typing the username. Ownership of the
+  person's shared projects passes to the longest-standing editor (or viewer).
+- Text they wrote in shared projects and the history stay, shown as "a former member". Their sessions,
+  invites, username, display name and login addresses are removed (also from the audit log, which keeps the
+  entries themselves); open tabs are logged out at once. The username can be used for a new account.
+- The last active admin cannot be deleted.
+
 ## 1.1.0 — 2026-11-20
 
 **Ligature no longer sets up a reverse proxy.** It runs on `127.0.0.1:3000` and you add it as one site to the

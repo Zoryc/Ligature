@@ -3,6 +3,7 @@
  * change summaries, the change list of a diff, paging. The server does the real work; these only present it.
  */
 import type { FileChange, VersionDiff, VersionFile, VersionKind, VersionSummary } from '@ligature/shared'
+import { FORMER_MEMBER, personName } from './people.ts'
 
 /** Short symbol + name of each kind (plain text symbols, no images). */
 export const KINDS: Record<VersionKind, { icon: string; name: string }> = {
@@ -87,14 +88,31 @@ export function versionRef(v: Pick<VersionSummary, 'label' | 'createdAt'>, fmt: 
   return v.label ? `"${v.label}"` : `the version of ${fmt(v.createdAt)}`
 }
 
-/** "Alice, Bob" / "by Alice" / "" — who changed something, and who created it (named, restore). */
-export function authorsText(v: Pick<VersionSummary, 'authors' | 'createdBy'>): string {
-  const parts: string[] = []
-  if (v.authors.length > 0) {
-    const shown = v.authors.slice(0, 3).join(', ')
-    parts.push(v.authors.length > 3 ? `${shown} +${v.authors.length - 3}` : shown)
+/** Kinds a person creates: there an empty createdBy means the account was deleted, not "automatic". */
+const CREATED_BY_SOMEONE: ReadonlySet<VersionKind> = new Set(['named', 'pre_restore', 'import'])
+
+/**
+ * Version authors as shown: deleted accounts become "a former member", once however many there were.
+ * Only those are merged: two living people may share a display name and both count (as on the server).
+ */
+function authorNames(authors: readonly string[]): string[] {
+  const out: string[] = []
+  for (const name of authors.map(personName)) {
+    if (name !== FORMER_MEMBER || !out.includes(FORMER_MEMBER)) out.push(name)
   }
-  if (v.createdBy && !v.authors.includes(v.createdBy)) parts.push(`by ${v.createdBy}`)
+  return out
+}
+
+/** "Alice, Bob" / "by Alice" / "" — who changed something, and who created it (named, restore). */
+export function authorsText(v: Pick<VersionSummary, 'authors' | 'createdBy'> & { kind?: VersionKind }): string {
+  const authors = authorNames(v.authors)
+  const createdBy = v.createdBy || (v.kind && CREATED_BY_SOMEONE.has(v.kind) ? FORMER_MEMBER : '')
+  const parts: string[] = []
+  if (authors.length > 0) {
+    const shown = authors.slice(0, 3).join(', ')
+    parts.push(authors.length > 3 ? `${shown} +${authors.length - 3}` : shown)
+  }
+  if (createdBy && !authors.includes(createdBy)) parts.push(`by ${createdBy}`)
   return parts.join(' · ')
 }
 

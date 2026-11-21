@@ -22,6 +22,12 @@ const COLS = `id, username, display_name AS displayName, password_hash AS passwo
 type RawRow = Omit<UserRow, 'isAdmin'> & { isAdmin: number }
 const fromRaw = (r: RawRow | undefined): UserRow | null => r ? { ...r, isAdmin: r.isAdmin === 1 } : null
 
+/**
+ * The name shown for a deleted account wherever a name is looked up (docs/ACCOUNT-DELETION.md). Returned by
+ * the server as is: in history '' already means "automatic", so an empty name could not stand for it.
+ */
+export const FORMER_MEMBER = 'a former member'
+
 export function getUserById(db: DB, id: string): UserRow | null {
   return fromRaw(db.prepare(`SELECT ${COLS} FROM users WHERE id = ?`).get(id) as RawRow | undefined)
 }

@@ -4,6 +4,7 @@ import { badRequest, forbidden, notFound } from '../errors.ts'
 import { isUuid, type Services } from '../services.ts'
 import type { DB } from '../db/index.ts'
 import type { SessionUser } from '../auth/sessions.ts'
+import { FORMER_MEMBER } from '../auth/users.ts'
 import { getProject, liveFiles, toTreeEntry, type FileRow } from '../projects/repo.ts'
 import { requireRole, touchProject, type Access } from '../projects/service.ts'
 import { extensionOf } from './classify.ts'
@@ -107,7 +108,8 @@ export function listTrash(s: Services, a: Access): TrashEntry[] {
     const deletedAt = b.top.deletedAt!
     out.push({
       id: b.top.id, name: b.top.name, kind: b.top.kind, originalPath: originalPath(byId, b.top),
-      deletedAt, deletedBy: (b.top.deletedBy && names.get(b.top.deletedBy)) ?? '',
+      // null: deleted before M2 recorded who; an id without an account: a deleted account.
+      deletedAt, deletedBy: b.top.deletedBy ? names.get(b.top.deletedBy) ?? FORMER_MEMBER : '',
       fileCount: files.length, size, expiresAt: deletedAt + s.limits.trashRetentionMs,
     })
   }

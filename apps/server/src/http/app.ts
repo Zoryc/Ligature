@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { ApiError } from '../errors.ts'
 import { requireAdmin, requireUser, type Env, type RouteDeps } from './context.ts'
 import { authRoutes } from './routes/auth.ts'
+import { accountRoutes } from './routes/account.ts'
 import { adminRoutes } from './routes/admin.ts'
 import { projectRoutes } from './routes/projects.ts'
 import { memberRoutes } from './routes/members.ts'
@@ -69,6 +70,7 @@ export function createApp(deps: AppDeps) {
   if (deps.health) app.get('/healthz', healthHandler(deps.health))
 
   app.route('/api', authRoutes(deps))
+  app.route('/api', accountRoutes(deps))
   app.route('/api', adminRoutes(deps))
   app.route('/api', projectRoutes(deps))
   app.route('/api', memberRoutes(deps))

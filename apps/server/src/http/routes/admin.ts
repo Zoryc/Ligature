@@ -1,9 +1,10 @@
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
-import { AUDIT_CATEGORIES, type AdminAbout, type AdminUser, type AuditCategory, type AuditPage, type GcReport, type InstanceSettings,
-  type RebuildDocResponse, type StorageReport } from '@ligature/shared'
+import { AUDIT_CATEGORIES, type AccountDeletionPreview, type AccountDeletionResult, type AdminAbout, type AdminUser, type AuditCategory,
+  type AuditPage, type GcReport, type InstanceSettings, type RebuildDocResponse, type StorageReport } from '@ligature/shared'
 import { audit, auditPage } from '../../audit.ts'
 import { ApiError, badRequest, notFound } from '../../errors.ts'
+import { deleteAccount, deletionPreview } from '../../auth/deleteAccount.ts'
 import { hashPassword, isAcceptablePassword } from '../../auth/password.ts'
 import { deleteUserSessions } from '../../auth/sessions.ts'
 import { getSettings, REGISTRATION_MODES, setSettings } from '../../auth/settings.ts'
@@ -21,7 +22,8 @@ const updateSchema = z.strictObject({
   displayName: displayNameSchema.optional(), isAdmin: z.boolean().optional(), disabled: z.boolean().optional(),
   password: passwordFieldSchema.optional(),
 })
-const settingsSchema = z.strictObject({ registration: z.enum(REGISTRATION_MODES as [string, ...string[]]) })
+const adminDeleteSchema = z.strictObject({ confirmUsername: z.string().max(64) })
+const settingsSchema =z.strictObject({ registration: z.enum(REGISTRATION_MODES as [string, ...string[]]) })
 
 const lastAdmin = (message: string) => new ApiError(409, 'last-admin', message)
 
@@ -113,6 +115,26 @@ export function adminRoutes(deps: RouteDeps): Hono<Env> {
       for (const p of projectIdsOfUser(db, id)) deps.collab.broadcast(p, { type: 'members-changed' })
     }
     return c.json(toAdminUser(getUserById(db, id)!) satisfies AdminUser)
+  })
+
+  /* ---- deleting an account (docs/ACCOUNT-DELETION.md) ---- */
+
+  /** The target of an admin deletion: never the admin themselves (they use the Account page, with their password). */
+  const deletionTarget = (c: Context<Env>): string => {
+    const id = c.req.param('id')
+    if (!isUuid(id)) throw notFound()
+    if (id === c.get('user').id) throw new ApiError(400, 'use-account-page', 'Delete your own account from the Account page')
+    return id
+  }
+
+  app.get('/admin/users/:id/deletion', c =>
+    c.json(deletionPreview(db, deletionTarget(c), 'admin') satisfies AccountDeletionPreview, 200, { 'cache-control': 'no-store' }))
+
+  app.delete('/admin/users/:id', async c => {
+    const id = deletionTarget(c)
+    const { confirmUsername } = await readJson(c, adminDeleteSchema)
+    const result = await deleteAccount(deps, { userId: id, by: 'admin', actorId: c.get('user').id, confirmUsername })
+    return c.json(result satisfies AccountDeletionResult)
   })
 
   app.get('/admin/settings', c => c.json(getSettings(db) satisfies InstanceSettings))

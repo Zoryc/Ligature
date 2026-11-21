@@ -6,6 +6,9 @@
   import { displayNameProblem, passwordProblem } from '../lib/validation.ts'
   import NavBar from '../lib/NavBar.svelte'
   import Avatar from '../lib/Avatar.svelte'
+  import DeleteAccountDialog from '../lib/DeleteAccountDialog.svelte'
+
+  let deleting = $state(false)
 
   let displayName = $state(session.me?.displayName ?? '')
   let nameBusy = $state(false)
@@ -104,6 +107,14 @@
         </div>
       </form>
     </section>
+
+    <section class="card danger-zone">
+      <h2>Delete account</h2>
+      <p class="sub">Deletes your account and the projects only you are a member of, immediately. Projects you share
+        with other people stay with them: transfer the ones you own first.</p>
+      <div class="row"><button type="button" class="danger" onclick={() => { deleting = true }}>Delete account…</button></div>
+    </section>
+    {#if deleting}<DeleteAccountDialog onclose={() => { deleting = false }} />{/if}
   {/if}
 </main>
 
@@ -139,6 +150,9 @@
   .control input { width: 100%; }
   .control .row input.grow { flex: 1; min-width: 0; width: auto; }
   .control .error { margin: 0; }
+  /* Folio danger style: the card's rule turns red, the button is outlined in red. */
+  .danger-zone { border-color: var(--red-rule); }
+  .danger-zone .row { display: flex; padding-top: 12px; border-top: 1px solid var(--rule-soft); }
   @media (max-width: 560px) {
     .field { grid-template-columns: 1fr; gap: 6px; }
     .label { padding-top: 0; }

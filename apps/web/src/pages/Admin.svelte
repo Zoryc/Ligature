@@ -8,6 +8,7 @@
   import { confirmDialog, openDialog } from '../lib/dialogs.svelte.ts'
   import { displayNameProblem, passwordProblem, usernameProblem } from '../lib/validation.ts'
   import { adminUserActions } from '../lib/adminActions.ts'
+  import { adminDeletedText, adminDeletionBlocked, adminDeletionText } from '../lib/accountDeletion.ts'
   import NavBar from '../lib/NavBar.svelte'
   import StorageSection from '../lib/StorageSection.svelte'
   import AuditLog from '../lib/AuditLog.svelte'
@@ -138,6 +139,32 @@
     await update(u, { displayName: name.trim() }, 'Display name saved.')
   }
 
+  /** Preview first (what goes, who gets the shared projects), then the username typed exactly confirms. */
+  async function deleteUser(u: AdminUser) {
+    let text: string
+    try {
+      const preview = await api.adminDeletionPreview(u.id)
+      const blocked = adminDeletionBlocked(preview)
+      if (blocked) {
+        toast(blocked, 'error', 7000)
+        return
+      }
+      text = adminDeletionText(preview, u)
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+      return
+    }
+    const ok = await confirmDialog('Delete account', text, { requireText: u.username, confirmLabel: 'Delete account', danger: true })
+    if (!ok) return
+    try {
+      toast(adminDeletedText(u.username, await api.adminDeleteUser(u.id, u.username)))
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+    }
+    // Refresh either way: a failure may mean the list is stale (already deleted, admin rights changed).
+    await load()
+  }
+
   async function createUser(e: Event) {
     e.preventDefault()
     cTouched = true
@@ -235,6 +262,9 @@
                         {/if}
                         {#if actions.includes('toggle-disabled')}
                           <button type="button" class="small" class:danger={!u.disabled} onclick={() => toggleDisabled(u)}>{u.disabled ? 'Enable' : 'Disable'}</button>
+                        {/if}
+                        {#if actions.includes('delete')}
+                          <button type="button" class="small danger" onclick={() => deleteUser(u)}>Delete…</button>
                         {/if}
                       </span>
                     </td>

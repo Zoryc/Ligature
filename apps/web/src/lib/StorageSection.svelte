@@ -4,6 +4,7 @@
   import { api } from './api.ts'
   import { errorMessage } from './errors.ts'
   import { toast } from './toasts.svelte.ts'
+  import { personName } from './people.ts'
   import {
     ariaSort, DEFAULT_SORT, formatBytes, formatDuration, gcLines, gcSummary, plural, projectBytes, sortProjects,
     storageTotals, toggleSort, type SortKey, type SortState,
@@ -110,7 +111,7 @@
             {#each rows as p (p.id)}
               <tr class:deleted={p.deleted}>
                 <td><span class="pname">{p.name}</span>{#if p.deleted}{' '}<span class="muted">(deleted)</span>{/if}</td>
-                <td>{p.owner || '—'}</td>
+                <td>{personName(p.owner)}</td>
                 <td class="num">{p.liveFiles}</td>
                 <td class="num">{formatBytes(p.liveBytes)}</td>
                 <td class="num">{formatBytes(p.trashBytes)}</td>

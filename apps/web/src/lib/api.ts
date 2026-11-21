@@ -1,5 +1,5 @@
 import type {
-  AcceptInviteResponse, AdminAbout, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, AuditCategory, AuditPage, BuildResult, CreatedInvite,
+  AcceptInviteResponse, AccountDeletionPreview, AccountDeletionResult, AdminAbout, AdminCreateUserRequest, AdminUpdateUserRequest, AdminUser, AuditCategory, AuditPage, BuildResult, CreatedInvite,
   CreateFileRequest, CreateInviteRequest, GcReport, ImportResponse, InstanceInfo, InstanceSettings, Invite, InvitePreview, Me,
   Member, OutputName, ProjectDetail, ProjectSummary, RestoreRequest, RestoreResponse, SignupRequest,
   SynctexEditResponse, SynctexViewResponse, TrashEntry, TreeEntry, UpdateFileRequest, UpdateProjectRequest,
@@ -77,12 +77,20 @@ export const api = {
   updateMe: (displayName: string) => request<Me>('PATCH', '/api/me', { displayName }),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/me/password', { currentPassword, newPassword }),
+  /** What deleting your own account would do (changes nothing). */
+  deletionPreview: () => request<AccountDeletionPreview>('GET', '/api/me/deletion'),
+  /** Deletes your own account; the password confirms (403 'wrong-password'). The session cookie is cleared. */
+  deleteMe: (password: string) => request<AccountDeletionResult>('DELETE', '/api/me', { password }),
 
   // admin
   adminAbout: () => request<AdminAbout>('GET', '/api/admin/about'),
   adminUsers: () => request<AdminUser[]>('GET', '/api/admin/users'),
   adminCreateUser: (req: AdminCreateUserRequest) => request<AdminUser>('POST', '/api/admin/users', req),
   adminUpdateUser: (id: string, req: AdminUpdateUserRequest) => request<AdminUser>('PATCH', `/api/admin/users/${enc(id)}`, req),
+  adminDeletionPreview: (id: string) => request<AccountDeletionPreview>('GET', `/api/admin/users/${enc(id)}/deletion`),
+  /** The account's exact username, typed by the admin, confirms (400 'confirm-mismatch'). */
+  adminDeleteUser: (id: string, confirmUsername: string) =>
+    request<AccountDeletionResult>('DELETE', `/api/admin/users/${enc(id)}`, { confirmUsername }),
   adminSettings: () => request<InstanceSettings>('GET', '/api/admin/settings'),
   adminUpdateSettings: (s: InstanceSettings) => request<InstanceSettings>('PATCH', '/api/admin/settings', s),
   adminStorage: () => request<StorageReport>('GET', '/api/admin/storage'),

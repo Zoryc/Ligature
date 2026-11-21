@@ -43,6 +43,40 @@ export interface UpdateMeRequest { displayName: string }
 /** POST /api/me/password */
 export interface ChangePasswordRequest { currentPassword: string; newPassword: string }
 
+/* ------------------------------------------------------------------ account deletion (docs/ACCOUNT-DELETION.md) */
+
+export interface DeletionProject { id: string; name: string }
+
+/**
+ * GET /api/me/deletion (self) and GET /api/admin/users/:id/deletion (admin): what deleting the account would do.
+ * Nothing is changed by asking.
+ */
+export interface AccountDeletionPreview {
+  /** Live projects whose only member is this account: deleted with it. */
+  deletedProjects: DeletionProject[]
+  /**
+   * Live projects it owns that have other members. Self-deletion is refused while this is not empty (transfer
+   * ownership first); an admin deletion hands each to its longest-standing editor (else viewer): `newOwner`.
+   */
+  sharedOwned: (DeletionProject & { newOwner: { userId: string; displayName: string } })[]
+  /** Projects it is only an editor or viewer of: it simply leaves them. */
+  leftProjects: number
+  /** null when deletion is allowed now; otherwise why not. */
+  blocked: null | 'owns-shared-projects' | 'last-admin'
+}
+
+/** DELETE /api/me (self): the account's password confirms. 200 AccountDeletionResult; the session cookie is cleared. */
+export interface DeleteMeRequest { password: string }
+
+/** DELETE /api/admin/users/:id (admin): the account's exact username, typed by the admin, confirms. */
+export interface AdminDeleteUserRequest { confirmUsername: string }
+
+export interface AccountDeletionResult {
+  projectsDeleted: number
+  ownershipTransferred: number
+  projectsLeft: number
+}
+
 /** Admin: GET /api/admin/users */
 export interface AdminUser {
   id: string
@@ -181,7 +215,10 @@ export interface TrashEntry {
   /** Project-relative path the item had when it was deleted (e.g. "chapters/intro.tex"). */
   originalPath: string
   deletedAt: number
-  /** Display name of who deleted it ('' if that account no longer exists). */
+  /**
+   * Display name of who deleted it: 'a former member' if that account was deleted since, '' if the deleter
+   * was never recorded (items trashed before M2).
+   */
   deletedBy: string
   /** Number of files (not folders) inside, including itself if it is a file. */
   fileCount: number
@@ -304,9 +341,15 @@ export interface VersionSummary {
   /** Set for named versions (and optionally others a user labelled). */
   label: string | null
   createdAt: number
-  /** Display name of whoever caused it (named / restore), or '' for automatic versions. */
+  /**
+   * Display name of whoever caused it (named / restore / import), 'a former member' if that account was
+   * deleted since, or '' for automatic versions.
+   */
   createdBy: string
-  /** Display names of everyone who changed something since the previous version (sorted). */
+  /**
+   * Display names of everyone who changed something since the previous version (sorted). Deleted accounts
+   * appear once as 'a former member'; living people who share a display name each appear.
+   */
   authors: string[]
   fileCount: number
   /** Files added / removed / modified compared with the previous version (0/0/0 for the first). */
@@ -471,7 +514,7 @@ export type AuditCategory = 'account' | 'admin' | 'members' | 'projects' | 'hist
 
 export const AUDIT_CATEGORIES: Record<AuditCategory, readonly string[]> = {
   account: ['signup', 'login', 'login-failure', 'logout-all'],
-  admin: ['admin-user-create', 'admin-user-update', 'settings-update', 'storage.view', 'gc.run', 'doc.rebuild', 'project.purge', 'backup.restore'],
+  admin: ['admin-user-create', 'admin-user-update', 'settings-update', 'storage.view', 'gc.run', 'doc.rebuild', 'project.purge', 'backup.restore', 'account.delete'],
   members: ['member-add', 'member-role-change', 'member-remove', 'ownership-transfer', 'invite-create', 'invite-revoke', 'invite-accept'],
   projects: ['project-create', 'project-delete', 'project.setting', 'file-delete', 'file.restore', 'file.purge', 'trash.empty'],
   history: ['version.create', 'version.label', 'version.restore'],

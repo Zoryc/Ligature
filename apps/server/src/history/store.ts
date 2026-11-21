@@ -1,5 +1,6 @@
 import type { VersionFile, VersionKind } from '@ligature/shared'
 import type { DB } from '../db/index.ts'
+import { FORMER_MEMBER } from '../auth/users.ts'
 import type { ThinCandidate } from './thinning.ts'
 
 /*
@@ -79,14 +80,20 @@ export function fileOf(db: DB, versionId: string, path: string): VersionFile | n
     WHERE version_id = ? AND path = ?`).get(versionId, path) as VersionFile | undefined) ?? null
 }
 
-/** Display names of each version's authors (sorted; accounts that no longer exist are left out). */
+/**
+ * Display names of each version's authors (sorted). Deleted accounts are kept as one FORMER_MEMBER entry
+ * per version: their edits are still in it, and several identical names would read as a glitch.
+ */
 export function authorsOf(db: DB, versionIds: readonly string[]): Map<string, string[]> {
   const out = new Map<string, string[]>(versionIds.map(id => [id, []]))
   if (versionIds.length === 0) return out
-  const rows = db.prepare(`SELECT va.version_id AS v, u.display_name AS name FROM version_authors va
-      JOIN users u ON u.id = va.user_id WHERE va.version_id IN (SELECT value FROM json_each(?))`)
-    .all(JSON.stringify(versionIds)) as { v: string; name: string }[]
-  for (const r of rows) out.get(r.v)?.push(r.name)
+  const rows = db.prepare(`SELECT va.version_id AS v, COALESCE(u.display_name, ?) AS name FROM version_authors va
+      LEFT JOIN users u ON u.id = va.user_id WHERE va.version_id IN (SELECT value FROM json_each(?))`)
+    .all(FORMER_MEMBER, JSON.stringify(versionIds)) as { v: string; name: string }[]
+  for (const r of rows) {
+    const list = out.get(r.v)
+    if (list && !(r.name === FORMER_MEMBER && list.includes(FORMER_MEMBER))) list.push(r.name)
+  }
   for (const list of out.values()) list.sort((a, b) => a.localeCompare(b))
   return out
 }

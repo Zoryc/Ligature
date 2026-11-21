@@ -3,6 +3,7 @@ import { audit } from '../audit.ts'
 import { ApiError, badRequest, notFound } from '../errors.ts'
 import { isUuid, type Services } from '../services.ts'
 import type { SessionUser } from '../auth/sessions.ts'
+import { FORMER_MEMBER } from '../auth/users.ts'
 import type { DB } from '../db/index.ts'
 import { getProject } from '../projects/repo.ts'
 import { requireRole, type Access } from '../projects/service.ts'
@@ -96,7 +97,8 @@ export function summarize(db: DB, rows: readonly VersionRow[], older: VersionRow
     if (cache.size > COUNT_CACHE_MAX) cache.delete(cache.keys().next().value!)
     return {
       id: v.id, kind: v.kind, label: v.label, createdAt: v.createdAt,
-      createdBy: (v.createdBy !== null && names.get(v.createdBy)) || '',
+      // '' means "automatic"; an id whose account is gone is a deleted account.
+      createdBy: v.createdBy === null ? '' : names.get(v.createdBy) ?? FORMER_MEMBER,
       authors: authors.get(v.id) ?? [],
       fileCount: counts.fileCount,
       changes: { ...counts.changes },

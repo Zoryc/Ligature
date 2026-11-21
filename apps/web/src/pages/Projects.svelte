@@ -11,6 +11,7 @@
   import { confirmDialog } from '../lib/dialogs.svelte.ts'
   import NavBar from '../lib/NavBar.svelte'
   import Avatar from '../lib/Avatar.svelte'
+  import { personName } from '../lib/people.ts'
 
   let projects = $state<ProjectSummary[] | null>(null)
   let error = $state<string | null>(null)
@@ -193,8 +194,8 @@
             <td><span class="tag" class:own={p.role === 'owner'}>{p.role}</span></td>
             <td>
               <span class="person">
-                <Avatar id={p.role === 'owner' && session.me ? session.me.id : p.ownerName} name={p.ownerName} size={20} />
-                <span>{p.ownerName}</span>
+                <Avatar id={p.role === 'owner' && session.me ? session.me.id : p.ownerName} name={personName(p.ownerName)} size={20} />
+                <span>{personName(p.ownerName)}</span>
               </span>
             </td>
             <td class="when">{when(p.updatedAt)}</td>
