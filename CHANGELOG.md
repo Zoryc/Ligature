@@ -4,7 +4,12 @@ Ligature follows [semantic versioning](https://semver.org): a new major version 
 when upgrading (it is then listed under **Upgrading**). Each version is a git tag (`v1.0.0`); hosts build
 the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compose.yaml up -d --build`).
 
-## Unreleased
+## 1.2.0 — 2026-11-24
+
+Writing tools (autocomplete, go to definition, rename and search in all files) and account deletion.
+
+**Upgrading from 1.1.0:** nothing to do: `git pull` (or `git checkout v1.2.0`), then
+`docker compose -f docker/compose.yaml up -d --build`. No database or configuration change.
 
 **Rename a label, and search and replace in all files** ([docs/RENAME-AND-REPLACE.md](docs/RENAME-AND-REPLACE.md)):
 - **F2** on a label (in `\label{…}` or any reference: `\ref`, `\eqref`, `\cref`, `\autoref`, ...) opens a small box
@@ -17,8 +22,6 @@ the images from it (`git checkout v1.0.0`, then `docker compose -f docker/compos
   typed in the meantime is kept; a rename is not undone if someone has since used the old name.
 - Done by your browser through the live documents, like typing: people with those files open see the change at
   once. The server did not change.
-
-**Fixed:** the spinner next to "Compiling…" was a turning square; it is a circle again.
 
 **Go to definition** ([docs/GO-TO-DEFINITION.md](docs/GO-TO-DEFINITION.md)): Ctrl+click (Cmd+click on macOS)
 on a label in `\ref{…}`, a key in `\cite{…}`, a path in `\input{…}` / `\includegraphics{…}`, or a command or
@@ -49,6 +52,8 @@ preview of exactly what will happen.
   invites, username, display name and login addresses are removed (also from the audit log, which keeps the
   entries themselves); open tabs are logged out at once. The username can be used for a new account.
 - The last active admin cannot be deleted.
+
+**Fixed:** the spinner next to "Compiling…" was a turning square; it is a circle again.
 
 **Problems panel:** epstopdf's "Shell escape feature is not enabled" is no longer shown. Shell escape is always
 off in Ligature, so it appeared for every document using graphicx (also through pgfplots or TikZ) as a problem
